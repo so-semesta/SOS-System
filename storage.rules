@@ -1,0 +1,50 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Auth check helper
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper untuk memvalidasi tipe file hanya gambar atau pdf
+    function isValidContentType() {
+      return request.resource.contentType.matches('image/.*') || 
+             request.resource.contentType.matches('application/pdf');
+    }
+    
+    // Helper untuk limit file
+    function isUnderSizeLimit(maxSizeMB) {
+      return request.resource.size <= maxSizeMB * 1024 * 1024;
+    }
+
+    // Mengunci file agar hanya bisa diakses siswa yang bersangkutan atau admin/guru
+    match /students/{studentId}/{fileName} {
+      allow read: if isAuthenticated(); // Bisa diamankan lebih lanjut untuk role admin
+      allow write: if isAuthenticated() 
+                   && request.auth.uid == studentId
+                   && isValidContentType()
+                   && (
+                     // Jika file adalah Pas Foto, maksimal 500KB
+                     (fileName.matches('.*photoUrl.*') && isUnderSizeLimit(0.5)) ||
+                     // Selain Pas Foto (seperti KTP, KK, Akte), misal limit 5MB
+                     (!fileName.matches('.*photoUrl.*') && isUnderSizeLimit(5.0))
+                   );
+    }
+
+    match /chats/{roomId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.resource.contentType.matches('image/.*') && isUnderSizeLimit(5.0);
+    }
+
+    match /osn-corner/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /posters/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.resource.contentType.matches('image/.*') && isUnderSizeLimit(5.0);
+    }
+  }
+}

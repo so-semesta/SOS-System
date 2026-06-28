@@ -1,0 +1,194 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role management",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher", "student"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "email", "role", "createdAt", "updatedAt"]
+    },
+    "student": {
+      "title": "Student",
+      "description": "Student information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "nisn": { "type": "string" },
+        "grade": { "type": "string" },
+        "osnField": { "type": "string" },
+        "nik": { "type": "string" },
+        "religion": { "type": "string" },
+        "birthPlace": { "type": "string" },
+        "birthDate": { "type": "number" },
+        "specialNeeds": { "type": "string" },
+        "isColorBlind": { "type": "boolean" },
+        "weightKg": { "type": "number" },
+        "heightCm": { "type": "number" },
+        "activeEmail": { "type": "string" },
+        "semestaEmail": { "type": "string" },
+        "activePhoneWA": { "type": "string" },
+        "homeAddress": { "type": "string" },
+        "houseNumber": { "type": "string" },
+        "rtRw": { "type": "string" },
+        "postalCode": { "type": "string" },
+        "fullAddress": {
+          "type": "object",
+          "properties": {
+            "street": { "type": "string" },
+            "number": { "type": "string" },
+            "rtRw": { "type": "string" },
+            "village": { "type": "string" },
+            "district": { "type": "string" },
+            "city": { "type": "string" },
+            "province": { "type": "string" },
+            "postalCode": { "type": "string" }
+          }
+        },
+        "motherName": { "type": "string" },
+        "motherNik": { "type": "string" },
+        "motherOccupation": { "type": "string" },
+        "motherEducation": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "fatherNik": { "type": "string" },
+        "fatherOccupation": { "type": "string" },
+        "fatherEducation": { "type": "string" },
+        "guardianContact": { "type": "string" },
+        "achievementIds": { "type": "array", "items": { "type": "string" } },
+        "documents": {
+          "type": "object",
+          "properties": {
+            "photoUrl": { "type": "string" },
+            "studentCardUrl": { "type": "string" },
+            "familyCardUrl": { "type": "string" },
+            "birthCertificateUrl": { "type": "string" },
+            "idCardUrl": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "fullName", "createdAt", "updatedAt"]
+    },
+    "competition": {
+      "title": "Competition",
+      "description": "Competition information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "field": { "type": "string" },
+        "registrationDeadline": { "type": "number" },
+        "rounds": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "name": { "type": "string" }, "date": { "type": "number" } } }
+        },
+        "fee": { "type": "number" },
+        "type": { "type": "string", "enum": ["Daring", "Luring", "Hybrid"] },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED"] },
+        "location": { "type": "string" },
+        "guidebookUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "posterUrl": { "type": "string" },
+        "curationColor": { "type": "string", "enum": ["GREEN", "YELLOW", "ORANGE", "RED"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "status"]
+    },
+    "registration": {
+      "title": "Registration",
+      "description": "Student competition registration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "competitionId": { "type": "string" },
+        "competitionTitle": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["studentId", "competitionId", "status"]
+    },
+    "achievement": {
+      "title": "Achievement",
+      "description": "Student achievement record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "competitionId": { "type": "string" },
+        "medalType": { "type": "string", "enum": ["GOLD", "SILVER", "BRONZE", "FINALS", "PARTICIPANT"] },
+        "points": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["studentId", "competitionId", "medalType"]
+    },
+    "osn": {
+      "title": "OSN",
+      "description": "OSN Placeholder",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      }
+    },
+    "guidanceLog": {
+      "title": "GuidanceLog",
+      "description": "Student daily check-in and psychological guidance log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "date": { "type": "number" },
+        "academicSubject": { "type": "string" },
+        "studyProgress": { "type": "string" },
+        "mood": { "type": "string", "enum": ["GREAT", "GOOD", "NEUTRAL", "BAD", "TERRIBLE"] },
+        "psychologicalNotes": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["studentId", "date", "academicSubject", "studyProgress", "mood", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/userProfile" },
+      "description": "User profiles"
+    },
+    "students/{studentId}": {
+      "schema": { "$ref": "#/entities/student" },
+      "description": "Student records"
+    },
+    "competitions/{competitionId}": {
+      "schema": { "$ref": "#/entities/competition" },
+      "description": "Competitions"
+    },
+    "registrations/{registrationId}": {
+      "schema": { "$ref": "#/entities/registration" },
+      "description": "Student competition registrations"
+    },
+    "achievements/{achievementId}": {
+      "schema": { "$ref": "#/entities/achievement" },
+      "description": "Achievements"
+    },
+    "osn/{osnId}": {
+      "schema": { "$ref": "#/entities/osn" },
+      "description": "OSN Data"
+    },
+    "guidanceLogs/{logId}": {
+      "schema": { "$ref": "#/entities/guidanceLog" },
+      "description": "Guidance and psychological logs from students"
+    }
+  }
+}
