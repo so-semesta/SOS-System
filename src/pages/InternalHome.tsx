@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 import { Calendar as CalendarIcon, MapPin, Trophy, BookOpen } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
-import ReactMarkdown from 'react-markdown';
+import DOMPurify from 'dompurify';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -169,9 +169,10 @@ export function InternalHome() {
             ) : announcement ? (
               <div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100">
                 <h3 className="font-bold text-xl text-indigo-900 mb-4">{announcement.title || 'Informasi Silabus'}</h3>
-                <div className="prose prose-sm max-w-none text-slate-700 prose-headings:text-indigo-900 prose-a:text-indigo-600">
-                  <ReactMarkdown>{announcement.content}</ReactMarkdown>
-                </div>
+                <div 
+                  className="prose prose-sm max-w-none text-slate-700 prose-headings:text-indigo-900 prose-a:text-indigo-600"
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(announcement.content) }}
+                />
               </div>
             ) : (
               <div className="text-center p-8 text-muted-foreground border rounded-lg bg-slate-50">
