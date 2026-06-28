@@ -21,8 +21,6 @@ const PREDEFINED_FIELDS = [
 import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { UserRole } from '../../../types/auth';
-import { storage } from '../../../lib/firebase';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 const formSchema = z.object({
   title: z.string().min(1, 'Judul wajib diisi'),
@@ -204,12 +202,9 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
       let finalPosterUrl = values.posterUrl;
 
       if (selectedFile) {
-        toast.info('Mengunggah poster...');
+        toast.info('Memproses poster...');
         const compressedBase64 = await getCompressedBase64(selectedFile);
-        
-        const storageRef = ref(storage, `posters/comp_${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}.jpg`);
-        const snapshot = await uploadString(storageRef, compressedBase64, 'data_url', { contentType: 'image/jpeg' });
-        finalPosterUrl = await getDownloadURL(snapshot.ref);
+        finalPosterUrl = compressedBase64;
       }
 
       const payload: Omit<Competition, 'id'> = {

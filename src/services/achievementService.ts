@@ -2,7 +2,7 @@ import { collection, doc, getDocs, setDoc, query, orderBy, getDoc } from 'fireba
 import { db } from '../lib/firebase';
 import { Achievement, CurationColor, MedalType } from '../types';
 
-export const calculateAchievementPoints = (curationColor: CurationColor, medalType: MedalType): number => {
+export const calculateAchievementPoints = (curationColor: CurationColor | undefined, medalType: MedalType): number => {
   const pointsMap = {
     [CurationColor.GREEN]: {
       [MedalType.GOLD]: 50,
@@ -34,11 +34,13 @@ export const calculateAchievementPoints = (curationColor: CurationColor, medalTy
     },
   };
 
-  if (!curationColor || !pointsMap[curationColor]) {
+  const colorToUse = curationColor || CurationColor.GREEN;
+
+  if (!pointsMap[colorToUse]) {
     return 0;
   }
 
-  return pointsMap[curationColor][medalType] || 0;
+  return pointsMap[colorToUse][medalType] || 0;
 };
 
 export const addAchievement = async (data: Omit<Achievement, 'id'>) => {

@@ -10,6 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 interface LeaderboardEntry {
   student: Student;
   totalPoints: number;
+  medals: {
+    gold: number;
+    silver: number;
+    bronze: number;
+    hm: number;
+    participation: number;
+  };
 }
 
 export function Leaderboard() {
@@ -26,14 +33,23 @@ export function Leaderboard() {
         ]);
 
         const pointsMap: Record<string, number> = {};
+        const medalsMap: Record<string, { gold: number; silver: number; bronze: number; hm: number; participation: number }> = {};
         
         registrations.forEach(reg => {
+          if (!pointsMap[reg.studentId]) pointsMap[reg.studentId] = 0;
+          if (!medalsMap[reg.studentId]) medalsMap[reg.studentId] = { gold: 0, silver: 0, bronze: 0, hm: 0, participation: 0 };
+          
           if (reg.finalResult) {
              const comp = competitions.find(c => c.id === reg.competitionId);
              if (comp) {
-               if (!pointsMap[reg.studentId]) pointsMap[reg.studentId] = 0;
                pointsMap[reg.studentId] += calculateAchievementPoints(comp.curationColor, reg.finalResult);
              }
+
+             if (reg.finalResult === MedalType.GOLD) medalsMap[reg.studentId].gold += 1;
+             else if (reg.finalResult === MedalType.SILVER) medalsMap[reg.studentId].silver += 1;
+             else if (reg.finalResult === MedalType.BRONZE) medalsMap[reg.studentId].bronze += 1;
+             else if (reg.finalResult === MedalType.FINALS) medalsMap[reg.studentId].hm += 1;
+             else if (reg.finalResult === MedalType.PARTICIPANT) medalsMap[reg.studentId].participation += 1;
           }
         });
 
@@ -41,6 +57,7 @@ export function Leaderboard() {
           .map(student => ({
             student,
             totalPoints: pointsMap[student.userId] || 0,
+            medals: medalsMap[student.userId] || { gold: 0, silver: 0, bronze: 0, hm: 0, participation: 0 },
           }))
           .filter(entry => entry.totalPoints > 0);
 
@@ -128,28 +145,36 @@ export function Leaderboard() {
             )}
           </div>
 
-          {/* Table for Rank 4+ */}
-          {rest.length > 0 && (
-            <Card className="max-w-4xl mx-auto mt-12">
+          {/* Table for All Leaderboard Entries */}
+          {leaderboard.length > 0 && (
+            <Card className="max-w-6xl mx-auto mt-12">
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-20 text-center">Peringkat</TableHead>
                       <TableHead>Nama Siswa</TableHead>
-                      <TableHead>Program</TableHead>
+                      <TableHead className="text-center">Emas</TableHead>
+                      <TableHead className="text-center">Perak</TableHead>
+                      <TableHead className="text-center">Perunggu</TableHead>
+                      <TableHead className="text-center">Honorable Mention</TableHead>
+                      <TableHead className="text-center">Partisipasi Lomba</TableHead>
                       <TableHead className="text-right">Total Poin</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rest.map((entry, index) => (
+                    {leaderboard.map((entry, index) => (
                       <TableRow key={entry.student.id}>
                         <TableCell className="text-center font-semibold text-muted-foreground">
-                          {index + 4}
+                          {index + 1}
                         </TableCell>
                         <TableCell className="font-medium">{entry.student.fullName}</TableCell>
-                        <TableCell>{entry.student.osnField || '-'}</TableCell>
-                        <TableCell className="text-right font-semibold">{entry.totalPoints}</TableCell>
+                        <TableCell className="text-center font-semibold text-yellow-600">{entry.medals.gold}</TableCell>
+                        <TableCell className="text-center font-semibold text-slate-400">{entry.medals.silver}</TableCell>
+                        <TableCell className="text-center font-semibold text-orange-600">{entry.medals.bronze}</TableCell>
+                        <TableCell className="text-center font-semibold text-blue-600">{entry.medals.hm}</TableCell>
+                        <TableCell className="text-center font-semibold text-green-600">{entry.medals.participation}</TableCell>
+                        <TableCell className="text-right font-bold text-lg">{entry.totalPoints}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

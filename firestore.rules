@@ -70,12 +70,7 @@ service cloud.firestore {
 
     // Competitions Collection
     function isValidCompetition(data) {
-      return data.keys().hasAll(['title', 'status', 'type', 'field', 'registrationDeadline']) &&
-             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
-             data.status in ['OPEN', 'CLOSED'] &&
-             data.type in ['Daring', 'Luring', 'Hybrid'] &&
-             data.field is list && data.field.size() > 0 &&
-             data.registrationDeadline is number;
+      return data.keys().hasAll(['title', 'status', 'type', 'field', 'registrationDeadline']);
     }
 
     match /competitions/{compId} {

@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getAllRegistrations, updateRegistrationStatus, updateRegistration, getCompetitionById, getAllCompetitions } from '../../services/competitionService';
-import { getStudentProfile } from '../../services/studentService';
-import { Registration, RegistrationStatus, Competition, Student, RoundChecklist, MedalType } from '../../types';
+import { getAllRegistrations, updateRegistrationStatus, updateRegistration, getCompetitionById, getAllCompetitions, applyForCompetition } from '../../services/competitionService';
+import { getStudentProfile, getAllStudents } from '../../services/studentService';
+import { Registration, RegistrationStatus, Competition, CompetitionStatus, Student, RoundChecklist, MedalType } from '../../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Search, CheckCircle2, XCircle, Eye, Download } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, Eye, Download, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function RegistrationApprovals() {
@@ -26,6 +26,63 @@ export function RegistrationApprovals() {
   const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [savingChecklist, setSavingChecklist] = useState(false);
+
+  // God Mode state
+  const [isGodModeOpen, setIsGodModeOpen] = useState(false);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [gmSelectedStudent, setGmSelectedStudent] = useState<string>('');
+  const [gmSelectedCompetition, setGmSelectedCompetition] = useState<string>('');
+  const [gmSubmitting, setGmSubmitting] = useState(false);
+
+  const openGodMode = async () => {
+    setIsGodModeOpen(true);
+    try {
+      const studentsData = await getAllStudents();
+      setAllStudents(studentsData);
+    } catch (error) {
+      toast.error('Gagal mengambil data siswa');
+    }
+  };
+
+  const handleGodModeSubmit = async () => {
+    if (!gmSelectedStudent || !gmSelectedCompetition) {
+      toast.error('Pilih siswa dan lomba terlebih dahulu');
+      return;
+    }
+    
+    const student = allStudents.find(s => s.userId === gmSelectedStudent);
+    const competition = competitions.find(c => c.id === gmSelectedCompetition);
+    
+    if (!student || !competition) {
+      toast.error('Data siswa atau lomba tidak valid');
+      return;
+    }
+
+    setGmSubmitting(true);
+    try {
+      const newRegId = `reg_${Date.now()}_${student.userId}`;
+      await applyForCompetition(newRegId, {
+        studentId: student.userId,
+        studentName: student.fullName,
+        competitionId: competition.id,
+        competitionTitle: competition.title,
+        status: RegistrationStatus.APPROVED, // auto approved
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+      
+      toast.success('Siswa berhasil ditambahkan ke lomba!');
+      setIsGodModeOpen(false);
+      setGmSelectedStudent('');
+      setGmSelectedCompetition('');
+      loadData();
+    } catch (error) {
+      console.error(error);
+      toast.error('Gagal mendaftarkan siswa');
+    } finally {
+      setGmSubmitting(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -221,6 +278,12 @@ export function RegistrationApprovals() {
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
           </Button>
+          {(userRole === 'ADMIN' || userRole === 'MANAGEMENT') && (
+            <Button onClick={openGodMode} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              <UserPlus className="w-4 h-4 mr-2" />
+              God Mode: Tambah Siswa
+            </Button>
+          )}
         </div>
       </div>
 
@@ -390,6 +453,58 @@ export function RegistrationApprovals() {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* God Mode Dialog */}
+      <Dialog open={isGodModeOpen} onOpenChange={setIsGodModeOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>God Mode: Tambahkan Siswa ke Lomba</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Pilih Siswa</label>
+              <Select value={gmSelectedStudent} onValueChange={setGmSelectedStudent}>
+                <SelectTrigger>
+                  <SelectValue placeholder="-- Pilih Siswa --" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allStudents.map(s => (
+                    <SelectItem key={s.userId} value={s.userId}>
+                      {s.fullName} ({s.grade}) - {s.osnField}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Pilih Lomba Aktif</label>
+              <Select value={gmSelectedCompetition} onValueChange={setGmSelectedCompetition}>
+                <SelectTrigger>
+                  <SelectValue placeholder="-- Pilih Lomba --" />
+                </SelectTrigger>
+                <SelectContent>
+                  {competitions
+                    .filter(c => c.status === CompetitionStatus.OPEN)
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.title}
+                      </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsGodModeOpen(false)} disabled={gmSubmitting}>
+              Batal
+            </Button>
+            <Button onClick={handleGodModeSubmit} disabled={gmSubmitting} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {gmSubmitting ? 'Memproses...' : 'Tambahkan'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
