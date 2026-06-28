@@ -184,6 +184,9 @@ export interface GuidanceLog {
   date: number; // timestamp
   academicSubject: string;
   studyProgress: string;
+  questionsCompleted?: number; // Jumlah Soal yang dikerjakan hari ini
+  summaryPages?: number; // Jumlah Halaman Ringkasan hari ini
+  studyHours?: number; // Jam Belajar hari ini
   mood: Mood;
   psychologicalNotes: string;
   createdAt: number;

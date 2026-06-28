@@ -1,17 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAllGuidanceLogs } from '../../services/guidanceService';
-import { GuidanceLog, Mood } from '../../types';
+import { getAllStudents } from '../../services/studentService';
+import { GuidanceLog, Mood, Student } from '../../types';
 import { UserRole } from '../../types/auth';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Search, Trash2, Download } from 'lucide-react';
+import { Search, Trash2, Download, BarChart2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { toast } from 'sonner';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { format } from 'date-fns';
 
 const MOOD_EMOJIS = {
   [Mood.GREAT]: '🤩 Sangat Baik',
@@ -39,17 +44,23 @@ const getMoodBadgeColor = (mood: Mood) => {
 export function GuidanceMonitor() {
   const { userRole } = useAuth();
   const [logs, setLogs] = useState<GuidanceLog[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedStudentForChart, setSelectedStudentForChart] = useState<string>('ALL');
 
   const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
 
-  const fetchLogs = async () => {
+  const fetchData = async () => {
     try {
-      const data = await getAllGuidanceLogs();
-      setLogs(data);
+      const [logsData, studentsData] = await Promise.all([
+        getAllGuidanceLogs(),
+        getAllStudents()
+      ]);
+      setLogs(logsData);
+      setStudents(studentsData);
     } catch (error) {
       toast.error('Gagal mengambil data monitoring guidance');
     } finally {
@@ -58,7 +69,7 @@ export function GuidanceMonitor() {
   };
 
   useEffect(() => {
-    fetchLogs();
+    fetchData();
   }, []);
 
   const triggerDelete = (id: string) => {
@@ -77,7 +88,6 @@ export function GuidanceMonitor() {
       toast.success('Data berhasil dihapus');
       setLogs(prev => prev.filter(log => log.id !== deletingLogId));
     } catch (err: any) {
-      console.error("Error dari handleDelete:", err.message);
       toast.error(`Gagal menghapus data: ${err.message || 'Unknown error'}`);
     } finally {
       setIsDeleting(false);
@@ -98,7 +108,7 @@ export function GuidanceMonitor() {
     }
 
     const headers = isManagement 
-      ? ['Tanggal', 'Nama Siswa', 'Mata Pelajaran', 'Progress Akademik', 'Kondisi Psikologis', 'Catatan Private']
+      ? ['Tanggal', 'Nama Siswa', 'Mata Pelajaran', 'Progress Akademik', 'Kondisi Psikologis', 'Catatan Private', 'Jam Belajar', 'Jml Soal', 'Jml Halaman']
       : ['Tanggal', 'Nama Siswa', 'Mata Pelajaran', 'Progress Akademik'];
 
     const formatField = (val: any) => {
@@ -117,14 +127,16 @@ export function GuidanceMonitor() {
       if (isManagement) {
         baseFields.push(
           formatField(MOOD_EMOJIS[l.mood] || l.mood),
-          formatField(l.psychologicalNotes || '-')
+          formatField(l.psychologicalNotes || '-'),
+          formatField(l.studyHours || 0),
+          formatField(l.questionsCompleted || 0),
+          formatField(l.summaryPages || 0)
         );
       }
       return baseFields.join(';');
     });
 
     const csvContent = '\uFEFF' + headers.join(';') + '\n' + rows.join('\n');
-
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -134,6 +146,22 @@ export function GuidanceMonitor() {
     link.click();
     document.body.removeChild(link);
   };
+
+  // Student specific chart data
+  const chartData = useMemo(() => {
+    if (selectedStudentForChart === 'ALL') return [];
+    
+    const studentLogs = logs
+      .filter(l => l.studentId === selectedStudentForChart)
+      .sort((a, b) => a.date - b.date);
+
+    return studentLogs.map(log => ({
+      dateStr: format(new Date(log.date), 'dd MMM'),
+      'Jam Belajar': log.studyHours || 0,
+      'Soal': log.questionsCompleted || 0,
+      'Halaman': log.summaryPages || 0,
+    }));
+  }, [logs, selectedStudentForChart]);
 
   return (
     <div className="space-y-6">
@@ -165,6 +193,56 @@ export function GuidanceMonitor() {
           )}
         </div>
       </div>
+
+      {isManagement && (
+        <Card className="mb-6">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center text-lg">
+              <BarChart2 className="mr-2 h-5 w-5 text-indigo-500" />
+              Analitik Jurnal Harian Siswa
+            </CardTitle>
+            <Select value={selectedStudentForChart} onValueChange={setSelectedStudentForChart}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue placeholder="Pilih Siswa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">-- Pilih Siswa --</SelectItem>
+                {students.map(s => (
+                  <SelectItem key={s.userId} value={s.userId}>
+                    {s.fullName} ({s.grade})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardHeader>
+          <CardContent>
+            {selectedStudentForChart === 'ALL' ? (
+              <div className="h-[200px] flex items-center justify-center border border-dashed rounded-lg text-muted-foreground mt-4 text-sm">
+                Pilih nama siswa pada dropdown di atas untuk melihat analitik.
+              </div>
+            ) : chartData.length > 0 ? (
+              <div className="h-[250px] w-full mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="dateStr" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="left" fontSize={12} tickLine={false} axisLine={false} />
+                    <RechartsTooltip />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                    <Line yAxisId="left" type="monotone" dataKey="Jam Belajar" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line yAxisId="left" type="monotone" dataKey="Soal" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line yAxisId="left" type="monotone" dataKey="Halaman" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center border border-dashed rounded-lg text-muted-foreground mt-4 text-sm">
+                Belum ada data daily report untuk siswa ini.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="rounded-md border bg-card overflow-hidden">
         <Table>

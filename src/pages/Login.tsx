@@ -27,11 +27,11 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <div className="w-full max-w-md rounded-2xl border bg-card p-10 shadow-sm">
-        <div className="mb-10 flex flex-col items-center justify-center space-y-3 text-center">
-          <div className="rounded-full bg-primary/10 p-4">
-            <GraduationCap className="h-10 w-10 text-primary" />
+        <div className="mb-10 flex flex-col items-center justify-center space-y-4 text-center">
+          <div className="rounded-2xl bg-white p-3 shadow-sm border">
+            <img src="/icon.png" alt="Logo" className="h-12 w-12 object-contain" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">SOS System</h1>
+          <h1 className="text-3xl font-bold tracking-tight">SOS System (Beta)</h1>
           <p className="text-sm text-muted-foreground">Semesta Olympiad Squad Management System</p>
         </div>
 

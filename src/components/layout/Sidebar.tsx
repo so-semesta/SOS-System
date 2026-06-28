@@ -66,8 +66,8 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-16 items-center border-b px-6">
-          <GraduationCap className="h-6 w-6 mr-2 text-primary" />
-          <span className="font-bold tracking-tight">SOS System</span>
+          <img src="/icon.png" alt="Logo" className="h-6 w-6 mr-2 object-contain" />
+          <span className="font-bold tracking-tight">SOS System (Beta)</span>
         </div>
         <div className="flex-1 overflow-auto py-4">
           <nav className="grid gap-1 px-2">

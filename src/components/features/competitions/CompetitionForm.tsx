@@ -56,7 +56,7 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
     resolver: zodResolver(formSchema),
     defaultValues: initialData ? {
       title: initialData.title,
-      field: initialData.field,
+      field: Array.isArray(initialData.field) ? initialData.field : [initialData.field].filter(Boolean) as string[],
       type: initialData.type,
       curationColor: initialData.curationColor,
       registrationDeadline: new Date(initialData.registrationDeadline).toISOString().split('T')[0],
@@ -321,7 +321,8 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                 <Label>Bidang</Label>
                 <div className="grid grid-cols-3 gap-2 border p-3 rounded-md">
                   {PREDEFINED_FIELDS.map((f) => {
-                    const currentFields = form.watch('field') || [];
+                    const rawFields = form.watch('field');
+                    const currentFields = Array.isArray(rawFields) ? rawFields : [];
                     return (
                       <div key={f} className="flex items-center space-x-2">
                         <Checkbox 

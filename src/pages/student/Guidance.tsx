@@ -18,6 +18,9 @@ import { toast } from 'sonner';
 const GuidanceFormSchema = z.object({
   academicSubject: z.string().min(1, 'Mata Pelajaran wajib diisi'),
   studyProgress: z.string().min(1, 'Progress Belajar wajib diisi'),
+  questionsCompleted: z.number().min(0, 'Minimal 0').default(0),
+  summaryPages: z.number().min(0, 'Minimal 0').default(0),
+  studyHours: z.number().min(1, 'Minimal 1 jam').default(1),
   mood: z.nativeEnum(Mood),
   psychologicalNotes: z.string().optional(),
 });
@@ -41,6 +44,9 @@ export function Guidance() {
   const form = useForm<GuidanceFormValues>({
     resolver: zodResolver(GuidanceFormSchema),
     defaultValues: {
+      questionsCompleted: 0,
+      summaryPages: 0,
+      studyHours: 1,
       mood: Mood.NEUTRAL,
       psychologicalNotes: '',
     },
@@ -73,6 +79,9 @@ export function Guidance() {
         date: Date.now(),
         academicSubject: values.academicSubject,
         studyProgress: values.studyProgress,
+        questionsCompleted: values.questionsCompleted,
+        summaryPages: values.summaryPages,
+        studyHours: Math.round(values.studyHours),
         mood: values.mood,
         psychologicalNotes: values.psychologicalNotes || '',
         createdAt: Date.now(),
@@ -115,6 +124,31 @@ export function Guidance() {
                     <p className="text-red-500 text-xs">{form.formState.errors.academicSubject.message}</p>
                   )}
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Jumlah Soal</Label>
+                    <Input type="number" {...form.register('questionsCompleted', { valueAsNumber: true })} />
+                    {form.formState.errors.questionsCompleted && (
+                      <p className="text-red-500 text-xs">{form.formState.errors.questionsCompleted.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Jumlah Halaman</Label>
+                    <Input type="number" {...form.register('summaryPages', { valueAsNumber: true })} />
+                    {form.formState.errors.summaryPages && (
+                      <p className="text-red-500 text-xs">{form.formState.errors.summaryPages.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Jam Belajar</Label>
+                    <Input type="number" {...form.register('studyHours', { valueAsNumber: true })} />
+                    {form.formState.errors.studyHours && (
+                      <p className="text-red-500 text-xs">{form.formState.errors.studyHours.message}</p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Progress Belajar Hari Ini</Label>
                   <Textarea 
