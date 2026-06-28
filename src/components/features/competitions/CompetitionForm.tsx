@@ -204,9 +204,12 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
       let finalPosterUrl = values.posterUrl;
 
       if (selectedFile) {
-        toast.info('Memproses poster...');
+        toast.info('Mengunggah poster...');
         const compressedBase64 = await getCompressedBase64(selectedFile);
-        finalPosterUrl = compressedBase64;
+        
+        const storageRef = ref(storage, `posters/comp_${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}.jpg`);
+        const snapshot = await uploadString(storageRef, compressedBase64, 'data_url', { contentType: 'image/jpeg' });
+        finalPosterUrl = await getDownloadURL(snapshot.ref);
       }
 
       const payload: Omit<Competition, 'id'> = {
