@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserRole } from '../../types/auth';
+import { LOGO_BASE64 } from '../../lib/constants';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -66,7 +67,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-16 items-center border-b px-6">
-          <img src="/icon.png" alt="Logo" className="h-6 w-6 mr-2 object-contain" />
+          <img src={LOGO_BASE64} alt="Logo" className="h-6 w-6 mr-2 object-contain" />
           <span className="font-bold tracking-tight">SOS System (Beta)</span>
         </div>
         <div className="flex-1 overflow-auto py-4">

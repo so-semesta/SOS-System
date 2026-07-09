@@ -36,6 +36,7 @@ export function Competitions() {
   
   const [search, setSearch] = useState('');
   const [fieldFilter, setFieldFilter] = useState('ALL');
+  const [curationFilter, setCurationFilter] = useState('ALL');
   
   const [selectedComp, setSelectedComp] = useState<Competition | null>(null);
   const [isApplying, setIsApplying] = useState(false);
@@ -67,7 +68,8 @@ export function Competitions() {
   const filteredComps = competitions.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
     const matchField = fieldFilter === 'ALL' || (Array.isArray(c.field) ? c.field.includes(fieldFilter) : c.field === fieldFilter);
-    return matchSearch && matchField;
+    const matchCuration = curationFilter === 'ALL' || c.curationColor === curationFilter;
+    return matchSearch && matchField && matchCuration;
   });
 
   const getRegistrationStatus = (compId: string) => {
@@ -253,6 +255,18 @@ export function Competitions() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={curationFilter} onValueChange={setCurationFilter}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Pilih Kurasi" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Kurasi</SelectItem>
+                <SelectItem value={CurationColor.GREEN}>Sangat Disarankan (Hijau)</SelectItem>
+                <SelectItem value={CurationColor.YELLOW}>Sangat Disarankan (Kuning)</SelectItem>
+                <SelectItem value={CurationColor.ORANGE}>Disarankan</SelectItem>
+                <SelectItem value={CurationColor.RED}>Tidak Disarankan</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {loading ? (
@@ -266,9 +280,10 @@ export function Competitions() {
               {filteredComps.map(comp => {
                 const curation = formatCuration(comp.curationColor);
                 const myReg = getRegistrationStatus(comp.id);
+                const isYellow = comp.curationColor === CurationColor.YELLOW;
                 
                 return (
-                  <Card key={comp.id} className="flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedComp(comp)}>
+                  <Card key={comp.id} className={`flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
                     {comp.posterUrl ? (
                       <div className="aspect-video w-full overflow-hidden bg-muted">
                         <img src={comp.posterUrl} alt={comp.title} className="object-cover w-full h-full" />
@@ -281,8 +296,8 @@ export function Competitions() {
                     
                     <CardHeader className="pb-3 flex-1 flex flex-col items-start gap-2">
                       <div className="flex flex-wrap gap-2 w-full">
-                        {Array.isArray(comp.field) ? comp.field.map((f, i) => <Badge key={i} variant="secondary">{f}</Badge>) : <Badge variant="secondary">{comp.field}</Badge>}
-                        <Badge variant="outline">{comp.type}</Badge>
+                        {Array.isArray(comp.field) ? comp.field.map((f, i) => <Badge key={i} variant="secondary" className={isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{f}</Badge>) : <Badge variant="secondary" className={isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{comp.field}</Badge>}
+                        <Badge variant="outline" className={isYellow ? "bg-yellow-200/50 text-yellow-900 border-yellow-300" : ""}>{comp.type}</Badge>
                         <Badge variant="outline" className={curation.className}>{curation.text}</Badge>
                       </div>
                       <CardTitle className="line-clamp-2 text-xl mt-1">{comp.title}</CardTitle>

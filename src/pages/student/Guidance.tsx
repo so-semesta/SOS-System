@@ -18,9 +18,9 @@ import { toast } from 'sonner';
 const GuidanceFormSchema = z.object({
   academicSubject: z.string().min(1, 'Mata Pelajaran wajib diisi'),
   studyProgress: z.string().min(1, 'Progress Belajar wajib diisi'),
-  questionsCompleted: z.number().min(0, 'Minimal 0').default(0),
-  summaryPages: z.number().min(0, 'Minimal 0').default(0),
-  studyHours: z.number().min(1, 'Minimal 1 jam').default(1),
+  questionsCompleted: z.number().min(0, 'Minimal 0'),
+  summaryPages: z.number().min(0, 'Minimal 0'),
+  studyHours: z.number().min(1, 'Minimal 1 jam'),
   mood: z.nativeEnum(Mood),
   psychologicalNotes: z.string().optional(),
 });

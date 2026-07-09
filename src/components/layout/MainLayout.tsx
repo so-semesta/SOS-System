@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { Outlet } from 'react-router-dom';
+import { TimerWidget } from './TimerWidget';
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -15,6 +16,7 @@ export function MainLayout() {
           <Outlet />
         </main>
       </div>
+      <TimerWidget />
     </div>
   );
 }
