@@ -6,9 +6,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Clock, Play, Pause, RotateCcw, X, Timer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { UserRole } from '../../types/auth';
+import { useLocation } from 'react-router-dom';
 
 export function TimerWidget() {
   const { userRole } = useAuth();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   
   // Stopwatch State
@@ -61,7 +63,7 @@ export function TimerWidget() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    <div className={`fixed bottom-6 right-6 z-50 flex flex-col items-end ${location.pathname === '/guidance' ? '' : 'hidden'}`}>
       {isOpen && (
         <Card className="mb-4 w-80 shadow-xl border-primary/20 animate-in slide-in-from-bottom-5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50 rounded-t-xl">

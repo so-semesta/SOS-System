@@ -370,6 +370,7 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                     <Select onValueChange={(val) => form.setValue('curationColor', val as any)} value={form.watch('curationColor')}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value={CurationColor.GOLD}>Lembaga Negara (GOLD)</SelectItem>
                         <SelectItem value={CurationColor.GREEN}>Hijau (Sangat Disarankan)</SelectItem>
                         <SelectItem value={CurationColor.YELLOW}>Kuning (Sangat Disarankan)</SelectItem>
                         <SelectItem value={CurationColor.ORANGE}>Oranye (Disarankan)</SelectItem>

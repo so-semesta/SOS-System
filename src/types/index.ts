@@ -86,6 +86,7 @@ export enum CurationColor {
   YELLOW = 'YELLOW',
   ORANGE = 'ORANGE',
   RED = 'RED',
+  GOLD = 'GOLD',
 }
 
 export enum CompetitionStatus {

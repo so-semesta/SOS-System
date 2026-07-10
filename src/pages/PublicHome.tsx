@@ -28,14 +28,22 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-const PREDEFINED_FIELDS = [
-  'Matematika', 'Fisika', 'Kimia', 'Biologi', 'Informatika', 
-  'Astronomi', 'Kebumian', 'Geografi', 'Ekonomi', 'Bahasa', 'Umum'
-];
-
-const COMPETITION_TYPES = [
-  'Puspresnas', 'Kemenag', 'Dinas Pendidikan', 'Swasta', 'Universitas', 'Lainnya'
-];
+const formatCuration = (curation: CurationColor) => {
+  switch (curation) {
+    case CurationColor.GOLD:
+      return { text: "Lembaga Negara (GOLD)", className: "bg-gradient-to-r from-yellow-300 via-amber-400 to-yellow-500 text-yellow-950 font-bold border-amber-500 shadow-sm" };
+    case CurationColor.GREEN:
+      return { text: "Sangat Disarankan", className: "bg-green-100 text-green-800 border-green-200" };
+    case CurationColor.YELLOW:
+      return { text: "Sangat Disarankan (Kuning)", className: "bg-[#fefce8] text-yellow-800 border-yellow-200" };
+    case CurationColor.ORANGE:
+      return { text: "Disarankan", className: "bg-orange-100 text-orange-800 border-orange-200" };
+    case CurationColor.RED:
+      return { text: "Tidak Disarankan", className: "bg-red-100 text-red-800 border-red-200" };
+    default:
+      return { text: curation, className: "" };
+  }
+};
 
 export function PublicHome() {
   const navigate = useNavigate();
@@ -50,9 +58,9 @@ export function PublicHome() {
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState('ALL');
   const [selectedField, setSelectedField] = useState('ALL');
   const [selectedCuration, setSelectedCuration] = useState('ALL');
+  const [sortBy, setSortBy] = useState('NEWEST');
 
   useEffect(() => {
     if (currentUser) {
@@ -120,11 +128,12 @@ export function PublicHome() {
     return { style };
   };
 
+  const fields = ['ALL', ...Array.from(new Set(competitions.flatMap(c => c.field || [])))];
+
   const filteredCompetitions = useMemo(() => {
     return competitions.filter(comp => {
       const matchSearch = comp.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (comp.location || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchType = selectedType === 'ALL' || comp.type === selectedType;
       
       let matchField = selectedField === 'ALL';
       if (selectedField !== 'ALL') {
@@ -137,9 +146,20 @@ export function PublicHome() {
       
       const matchCuration = selectedCuration === 'ALL' || comp.curationColor === selectedCuration;
 
-      return matchSearch && matchType && matchField && matchCuration;
+      return matchSearch && matchField && matchCuration;
+    }).sort((a, b) => {
+      if (sortBy === 'DEADLINE') {
+        return new Date(b.registrationDeadline).getTime() - new Date(a.registrationDeadline).getTime();
+      } else if (sortBy === 'PRELIMINARY') {
+        const aPrelim = a.rounds.length > 0 ? Math.min(...a.rounds.map(r => new Date(r.date).getTime())) : Infinity;
+        const bPrelim = b.rounds.length > 0 ? Math.min(...b.rounds.map(r => new Date(r.date).getTime())) : Infinity;
+        return bPrelim - aPrelim;
+      } else {
+        // NEWEST
+        return b.createdAt - a.createdAt;
+      }
     });
-  }, [competitions, searchTerm, selectedType, selectedField, selectedCuration]);
+  }, [competitions, searchTerm, selectedField, selectedCuration, sortBy]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -229,25 +249,13 @@ export function PublicHome() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-                <Select value={selectedType} onValueChange={setSelectedType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua Kategori" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Semua Kategori</SelectItem>
-                    {COMPETITION_TYPES.map(type => (
-                      <SelectItem key={type} value={type}>{type}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <Select value={selectedField} onValueChange={setSelectedField}>
                   <SelectTrigger>
                     <SelectValue placeholder="Semua Bidang" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL">Semua Bidang</SelectItem>
-                    {PREDEFINED_FIELDS.map(field => (
-                      <SelectItem key={field} value={field}>{field}</SelectItem>
+                    {fields.map(field => (
+                      <SelectItem key={field} value={field}>{field === 'ALL' ? 'Semua Bidang' : field}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -257,10 +265,21 @@ export function PublicHome() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Semua Kurasi</SelectItem>
+                    <SelectItem value={CurationColor.GOLD}>Lembaga Negara (GOLD)</SelectItem>
                     <SelectItem value={CurationColor.GREEN}>Sangat Disarankan (Hijau)</SelectItem>
                     <SelectItem value={CurationColor.YELLOW}>Sangat Disarankan (Kuning)</SelectItem>
                     <SelectItem value={CurationColor.ORANGE}>Disarankan</SelectItem>
                     <SelectItem value={CurationColor.RED}>Tidak Disarankan</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Urutkan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NEWEST">Input Terbaru</SelectItem>
+                    <SelectItem value="DEADLINE">Deadline Daftar</SelectItem>
+                    <SelectItem value="PRELIMINARY">Pelaksanaan Penyisihan</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -280,11 +299,13 @@ export function PublicHome() {
                   const regs = registrationsMap[comp.id] || [];
                   const regCount = regs.length;
                   const isYellow = comp.curationColor === CurationColor.YELLOW;
+                  const isGold = comp.curationColor === CurationColor.GOLD;
+                  const curation = formatCuration(comp.curationColor);
                   const isUnapproved = comp.isApproved === false;
                   const isDeadlinePassed = new Date(comp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0);
                   
                   return (
-                    <Card key={comp.id} className={`flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
+                    <Card key={comp.id} className={`flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-300' : isYellow ? 'bg-[#fefce8] border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
                       {comp.posterUrl && (
                         <div className="h-48 w-full overflow-hidden bg-muted">
                           <img src={comp.posterUrl} alt={comp.title} className="w-full h-full object-cover" />
@@ -294,16 +315,17 @@ export function PublicHome() {
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex flex-wrap gap-1">
                             {Array.isArray(comp.field) ? comp.field.map((f, i) => (
-                              <Badge key={i} variant="outline" className={`${isYellow ? 'bg-yellow-100/50 text-yellow-800 border-yellow-300' : 'bg-primary/5 text-primary border-primary/20'}`}>
+                              <Badge key={i} variant="outline" className={`${isGold ? 'bg-amber-100 text-amber-900 border-amber-300' : isYellow ? 'bg-yellow-100/50 text-yellow-800 border-yellow-300' : 'bg-primary/5 text-primary border-primary/20'}`}>
                                 {f}
                               </Badge>
                             )) : (
-                              <Badge variant="outline" className={`${isYellow ? 'bg-yellow-100/50 text-yellow-800 border-yellow-300' : 'bg-primary/5 text-primary border-primary/20'}`}>
+                              <Badge variant="outline" className={`${isGold ? 'bg-amber-100 text-amber-900 border-amber-300' : isYellow ? 'bg-yellow-100/50 text-yellow-800 border-yellow-300' : 'bg-primary/5 text-primary border-primary/20'}`}>
                                 {comp.field}
                               </Badge>
                             )}
+                            <Badge variant="outline" className={curation.className}>{curation.text}</Badge>
                           </div>
-                          <Badge variant="secondary" className={isYellow ? "bg-yellow-200/50 text-yellow-900" : ""}>{comp.type}</Badge>
+                          <Badge variant="secondary" className={isGold ? "bg-amber-200/50 text-amber-950 border-amber-300" : isYellow ? "bg-yellow-200/50 text-yellow-900" : ""}>{comp.type}</Badge>
                         </div>
                         <CardTitle className="line-clamp-2">
                           {comp.title}
@@ -316,20 +338,20 @@ export function PublicHome() {
                       </CardHeader>
                       <CardContent className="flex-1">
                         <div className="space-y-2 text-sm text-muted-foreground">
-                          <div className={`flex items-center ${isDeadlinePassed ? 'text-red-500 font-medium' : ''}`}>
-                            <CalendarIcon className={`h-4 w-4 mr-2 ${isDeadlinePassed ? 'text-red-500' : 'text-slate-400'}`} />
-                            <span>Deadline: {format(new Date(comp.registrationDeadline), 'dd MMM yyyy', { locale: localeId })}</span>
+                          <div className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${isDeadlinePassed ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                            <CalendarIcon className="h-3 w-3 mr-1.5" />
+                            <span>Batas Daftar: {format(new Date(comp.registrationDeadline), 'dd MMM yyyy', { locale: localeId })}</span>
                           </div>
                           
-                          <div className={`mt-4 pt-4 border-t ${isYellow ? 'border-yellow-200' : ''}`}>
+                          <div className={`mt-4 pt-4 border-t ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
                             <div className="flex items-center text-sm font-medium text-slate-900 mb-2">
-                              <Users className={`h-4 w-4 mr-2 ${isYellow ? 'text-yellow-600' : 'text-primary'}`} />
+                              <Users className={`h-4 w-4 mr-2 ${isGold ? 'text-amber-600' : isYellow ? 'text-yellow-600' : 'text-primary'}`} />
                               Pendaftar ({regCount})
                             </div>
                             {regCount > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {regs.slice(0, 5).map(r => (
-                                  <Badge key={r.id} variant="secondary" className={`text-xs font-normal ${isYellow ? 'bg-yellow-100 text-yellow-800' : ''}`}>
+                                  <Badge key={r.id} variant="secondary" className={`text-xs font-normal ${isGold ? 'bg-amber-100 text-amber-900' : isYellow ? 'bg-yellow-100 text-yellow-800' : ''}`}>
                                     {r.studentName || 'Anonim'}
                                   </Badge>
                                 ))}
@@ -345,8 +367,8 @@ export function PublicHome() {
                           </div>
                         </div>
                       </CardContent>
-                      <CardFooter className={`pt-4 border-t ${isYellow ? 'border-yellow-200' : ''}`}>
-                        <Button className={`w-full ${isYellow ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : ''}`} onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
+                      <CardFooter className={`pt-4 border-t ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
+                        <Button className={`w-full ${isGold ? 'bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 text-white hover:opacity-90' : isYellow ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : ''}`} onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
                           Daftar Lomba
                         </Button>
                       </CardFooter>
@@ -404,7 +426,7 @@ export function PublicHome() {
               <div>
                 <p className="font-semibold text-muted-foreground text-sm mb-1">Rangkaian / Jadwal Lomba</p>
                 <div className="rounded-md border p-3 bg-muted/20 text-sm space-y-2">
-                  {selectedComp.rounds.length > 0 ? selectedComp.rounds.map((r, i) => (
+                  {selectedComp.rounds.length > 0 ? selectedComp.rounds.slice().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((r, i) => (
                     <div key={i} className="flex justify-between border-b last:border-0 pb-1 last:pb-0">
                       <span>{r.name}</span>
                       <span className="font-medium">{format(new Date(r.date), 'dd MMM yyyy', { locale: localeId })}</span>

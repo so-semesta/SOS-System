@@ -16,9 +16,12 @@ import { Search, MapPin, Calendar, ExternalLink, Plus, Printer } from 'lucide-re
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
+    case CurationColor.GOLD:
+      return { text: "Lembaga Negara (GOLD)", className: "bg-gradient-to-r from-yellow-300 via-amber-400 to-yellow-500 text-yellow-950 font-bold border-amber-500 shadow-sm" };
     case CurationColor.GREEN:
-    case CurationColor.YELLOW:
       return { text: "Sangat Disarankan", className: "bg-green-100 text-green-800 border-green-200" };
+    case CurationColor.YELLOW:
+      return { text: "Sangat Disarankan (Kuning)", className: "bg-[#fefce8] text-yellow-800 border-yellow-200" };
     case CurationColor.ORANGE:
       return { text: "Disarankan", className: "bg-orange-100 text-orange-800 border-orange-200" };
     case CurationColor.RED:
@@ -37,6 +40,7 @@ export function Competitions() {
   const [search, setSearch] = useState('');
   const [fieldFilter, setFieldFilter] = useState('ALL');
   const [curationFilter, setCurationFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState('NEWEST');
   
   const [selectedComp, setSelectedComp] = useState<Competition | null>(null);
   const [isApplying, setIsApplying] = useState(false);
@@ -70,6 +74,17 @@ export function Competitions() {
     const matchField = fieldFilter === 'ALL' || (Array.isArray(c.field) ? c.field.includes(fieldFilter) : c.field === fieldFilter);
     const matchCuration = curationFilter === 'ALL' || c.curationColor === curationFilter;
     return matchSearch && matchField && matchCuration;
+  }).sort((a, b) => {
+    if (sortBy === 'DEADLINE') {
+      return new Date(b.registrationDeadline).getTime() - new Date(a.registrationDeadline).getTime();
+    } else if (sortBy === 'PRELIMINARY') {
+      const aPrelim = a.rounds.length > 0 ? Math.min(...a.rounds.map(r => new Date(r.date).getTime())) : Infinity;
+      const bPrelim = b.rounds.length > 0 ? Math.min(...b.rounds.map(r => new Date(r.date).getTime())) : Infinity;
+      return bPrelim - aPrelim;
+    } else {
+      // NEWEST
+      return b.createdAt - a.createdAt;
+    }
   });
 
   const getRegistrationStatus = (compId: string) => {
@@ -267,6 +282,16 @@ export function Competitions() {
                 <SelectItem value={CurationColor.RED}>Tidak Disarankan</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Urutkan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NEWEST">Input Terbaru</SelectItem>
+                <SelectItem value="DEADLINE">Deadline Daftar</SelectItem>
+                <SelectItem value="PRELIMINARY">Pelaksanaan Penyisihan</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {loading ? (
@@ -281,9 +306,10 @@ export function Competitions() {
                 const curation = formatCuration(comp.curationColor);
                 const myReg = getRegistrationStatus(comp.id);
                 const isYellow = comp.curationColor === CurationColor.YELLOW;
+                const isGold = comp.curationColor === CurationColor.GOLD;
                 
                 return (
-                  <Card key={comp.id} className={`flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
+                  <Card key={comp.id} className={`flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-300' : isYellow ? 'bg-[#fefce8] border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
                     {comp.posterUrl ? (
                       <div className="aspect-video w-full overflow-hidden bg-muted">
                         <img src={comp.posterUrl} alt={comp.title} className="object-cover w-full h-full" />
@@ -296,16 +322,16 @@ export function Competitions() {
                     
                     <CardHeader className="pb-3 flex-1 flex flex-col items-start gap-2">
                       <div className="flex flex-wrap gap-2 w-full">
-                        {Array.isArray(comp.field) ? comp.field.map((f, i) => <Badge key={i} variant="secondary" className={isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{f}</Badge>) : <Badge variant="secondary" className={isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{comp.field}</Badge>}
-                        <Badge variant="outline" className={isYellow ? "bg-yellow-200/50 text-yellow-900 border-yellow-300" : ""}>{comp.type}</Badge>
+                        {Array.isArray(comp.field) ? comp.field.map((f, i) => <Badge key={i} variant="secondary" className={isGold ? "bg-amber-100 text-amber-900" : isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{f}</Badge>) : <Badge variant="secondary" className={isGold ? "bg-amber-100 text-amber-900" : isYellow ? "bg-yellow-100 text-yellow-800" : ""}>{comp.field}</Badge>}
+                        <Badge variant="outline" className={isGold ? "bg-amber-200/50 text-amber-950 border-amber-300" : isYellow ? "bg-yellow-200/50 text-yellow-900 border-yellow-300" : ""}>{comp.type}</Badge>
                         <Badge variant="outline" className={curation.className}>{curation.text}</Badge>
                       </div>
                       <CardTitle className="line-clamp-2 text-xl mt-1">{comp.title}</CardTitle>
                     </CardHeader>
                     
                     <CardContent className="pb-3 text-sm flex-none">
-                      <div className="flex items-center text-muted-foreground mb-1">
-                        <Calendar className="mr-2 h-4 w-4" />
+                      <div className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold mb-3 ${new Date(comp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0) ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                        <Calendar className="mr-1.5 h-3 w-3" />
                         Batas Daftar: {new Date(comp.registrationDeadline).toLocaleDateString('id-ID')}
                       </div>
                       <div className="flex items-center text-muted-foreground mb-3">
@@ -433,7 +459,7 @@ export function Competitions() {
               <div>
                 <p className="font-semibold text-muted-foreground text-sm mb-1">Rangkaian / Jadwal Lomba</p>
                 <div className="rounded-md border p-3 bg-muted/20 text-sm space-y-2">
-                  {selectedComp.rounds.length > 0 ? selectedComp.rounds.map((r, i) => (
+                  {selectedComp.rounds.length > 0 ? selectedComp.rounds.slice().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((r, i) => (
                     <div key={i} className="flex justify-between border-b last:border-0 pb-1 last:pb-0">
                       <span>{r.name}</span>
                       <span className="font-medium">{new Date(r.date).toLocaleDateString('id-ID')}</span>

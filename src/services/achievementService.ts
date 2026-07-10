@@ -4,6 +4,13 @@ import { Achievement, CurationColor, MedalType } from '../types';
 
 export const calculateAchievementPoints = (curationColor: CurationColor | undefined, medalType: MedalType): number => {
   const pointsMap = {
+    [CurationColor.GOLD]: {
+      [MedalType.GOLD]: 60,
+      [MedalType.SILVER]: 50,
+      [MedalType.BRONZE]: 40,
+      [MedalType.FINALS]: 30,
+      [MedalType.PARTICIPANT]: 20,
+    },
     [CurationColor.GREEN]: {
       [MedalType.GOLD]: 50,
       [MedalType.SILVER]: 40,
