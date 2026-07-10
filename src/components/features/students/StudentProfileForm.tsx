@@ -47,6 +47,7 @@ export function StudentProfileForm({ initialData, studentId, onSave, isLoading }
       const birthDateTimestamp = values.birthDate ? new Date(values.birthDate).getTime() : undefined;
       const updatedData: Partial<Student> = {
         ...values,
+        fullAddress: values.fullAddress as any,
         documents: values.documents as any,
         birthDate: birthDateTimestamp,
         updatedAt: Date.now(),

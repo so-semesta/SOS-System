@@ -12,7 +12,7 @@ import { Search, Trash2, Download, BarChart2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { toast } from 'sonner';
-import { deleteDoc, doc } from 'firebase/firestore';
+import { deleteDoc, doc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -49,18 +49,24 @@ export function GuidanceMonitor() {
   const [search, setSearch] = useState('');
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [selectedStudentForChart, setSelectedStudentForChart] = useState<string>('ALL');
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('ALL');
 
   const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
 
   const fetchData = async () => {
     try {
-      const [logsData, studentsData] = await Promise.all([
-        getAllGuidanceLogs(),
-        getAllStudents()
-      ]);
+      const logsData = await getAllGuidanceLogs();
       setLogs(logsData);
-      setStudents(studentsData);
+
+      const usersQuery = query(collection(db, 'users'), where('role', '==', 'STUDENT'));
+      const usersSnap = await getDocs(usersQuery);
+      const activeStudents = usersSnap.docs.map(doc => ({
+        id: doc.id,
+        userId: doc.id,
+        fullName: doc.data().name || doc.data().email || 'Unknown',
+        grade: 'Active'
+      }));
+      setStudents(activeStudents as any);
     } catch (error) {
       toast.error('Gagal mengambil data monitoring guidance');
     } finally {
@@ -95,11 +101,12 @@ export function GuidanceMonitor() {
     }
   };
 
-  const filteredLogs = logs.filter(
-    (l) =>
-      l.studentName?.toLowerCase().includes(search.toLowerCase()) ||
-      l.academicSubject.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredLogs = logs.filter((l) => {
+    const matchesSearch = l.studentName?.toLowerCase().includes(search.toLowerCase()) ||
+      l.academicSubject.toLowerCase().includes(search.toLowerCase());
+    const matchesStudent = selectedStudentFilter === 'ALL' || l.studentId === selectedStudentFilter;
+    return matchesSearch && matchesStudent;
+  });
 
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) {
@@ -149,19 +156,26 @@ export function GuidanceMonitor() {
 
   // Student specific chart data
   const chartData = useMemo(() => {
-    if (selectedStudentForChart === 'ALL') return [];
-    
-    const studentLogs = logs
-      .filter(l => l.studentId === selectedStudentForChart)
-      .sort((a, b) => a.date - b.date);
+    const dataToProcess = selectedStudentFilter === 'ALL' 
+      ? logs 
+      : logs.filter(l => l.studentId === selectedStudentFilter);
 
-    return studentLogs.map(log => ({
-      dateStr: format(new Date(log.date), 'dd MMM'),
-      'Jam Belajar': log.studyHours || 0,
-      'Soal': log.questionsCompleted || 0,
-      'Halaman': log.summaryPages || 0,
-    }));
-  }, [logs, selectedStudentForChart]);
+    const sortedLogs = [...dataToProcess].sort((a, b) => a.date - b.date);
+
+    // Group by dateStr
+    const grouped = sortedLogs.reduce((acc, log) => {
+      const dateStr = format(new Date(log.date), 'dd MMM');
+      if (!acc[dateStr]) {
+        acc[dateStr] = { dateStr, 'Jam Belajar': 0, 'Soal': 0, 'Halaman': 0 };
+      }
+      acc[dateStr]['Jam Belajar'] += (log.studyHours || 0);
+      acc[dateStr]['Soal'] += (log.questionsCompleted || 0);
+      acc[dateStr]['Halaman'] += (log.summaryPages || 0);
+      return acc;
+    }, {} as Record<string, any>);
+
+    return Object.values(grouped);
+  }, [logs, selectedStudentFilter]);
 
   return (
     <div className="space-y-6">
@@ -201,26 +215,22 @@ export function GuidanceMonitor() {
               <BarChart2 className="mr-2 h-5 w-5 text-indigo-500" />
               Analitik Jurnal Harian Siswa
             </CardTitle>
-            <Select value={selectedStudentForChart} onValueChange={setSelectedStudentForChart}>
+            <Select value={selectedStudentFilter} onValueChange={setSelectedStudentFilter}>
               <SelectTrigger className="w-[250px]">
                 <SelectValue placeholder="Pilih Siswa" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">-- Pilih Siswa --</SelectItem>
+                <SelectItem value="ALL">Semua Siswa</SelectItem>
                 {students.map(s => (
                   <SelectItem key={s.userId} value={s.userId}>
-                    {s.fullName} ({s.grade})
+                    {s.fullName}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </CardHeader>
           <CardContent>
-            {selectedStudentForChart === 'ALL' ? (
-              <div className="h-[200px] flex items-center justify-center border border-dashed rounded-lg text-muted-foreground mt-4 text-sm">
-                Pilih nama siswa pada dropdown di atas untuk melihat analitik.
-              </div>
-            ) : chartData.length > 0 ? (
+            {chartData.length > 0 ? (
               <div className="h-[250px] w-full mt-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -237,7 +247,7 @@ export function GuidanceMonitor() {
               </div>
             ) : (
               <div className="h-[200px] flex items-center justify-center border border-dashed rounded-lg text-muted-foreground mt-4 text-sm">
-                Belum ada data daily report untuk siswa ini.
+                Belum ada data daily report.
               </div>
             )}
           </CardContent>
@@ -254,6 +264,9 @@ export function GuidanceMonitor() {
               <TableHead className="w-1/3">Progress Akademik</TableHead>
               {isManagement && (
                 <>
+                  <TableHead className="text-center">Jam Belajar</TableHead>
+                  <TableHead className="text-center">Jml Soal</TableHead>
+                  <TableHead className="text-center">Halaman</TableHead>
                   <TableHead>Kondisi Psikologis</TableHead>
                   <TableHead className="w-1/4">Catatan Private</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -264,13 +277,13 @@ export function GuidanceMonitor() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={isManagement ? 7 : 4} className="h-24 text-center">
+                <TableCell colSpan={isManagement ? 10 : 4} className="h-24 text-center">
                   Memuat data monitoring...
                 </TableCell>
               </TableRow>
             ) : filteredLogs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isManagement ? 7 : 4} className="h-24 text-center">
+                <TableCell colSpan={isManagement ? 10 : 4} className="h-24 text-center">
                   Tidak ada data yang ditemukan.
                 </TableCell>
               </TableRow>
@@ -289,6 +302,15 @@ export function GuidanceMonitor() {
                   {/* KONDISI PSIKOLOGIS - HANYA UNTUK MANAGEMENT */}
                   {isManagement && (
                     <>
+                      <TableCell className="text-center font-medium">
+                        {log.studyHours ? `${log.studyHours}j` : '-'}
+                      </TableCell>
+                      <TableCell className="text-center font-medium">
+                        {log.questionsCompleted || '-'}
+                      </TableCell>
+                      <TableCell className="text-center font-medium">
+                        {log.summaryPages || '-'}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getMoodBadgeColor(log.mood)}>
                           {MOOD_EMOJIS[log.mood] || log.mood}

@@ -305,7 +305,7 @@ export function PublicHome() {
                   const isDeadlinePassed = new Date(comp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0);
                   
                   return (
-                    <Card key={comp.id} className={`flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-yellow-200 via-amber-300 to-yellow-500 border-amber-500' : isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
+                    <Card key={comp.id} className={`flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-amber-200 via-yellow-400 to-amber-500 border-amber-600' : isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
                       {comp.posterUrl && (
                         <div className="h-48 w-full overflow-hidden bg-muted">
                           <img src={comp.posterUrl} alt={comp.title} className="w-full h-full object-cover" />
@@ -368,7 +368,7 @@ export function PublicHome() {
                         </div>
                       </CardContent>
                       <CardFooter className={`pt-4 border-t ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
-                        <Button className={`w-full ${isGold ? 'bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 text-white hover:opacity-90' : ''}`} onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
+                        <Button className="w-full" onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
                           Daftar Lomba
                         </Button>
                       </CardFooter>
