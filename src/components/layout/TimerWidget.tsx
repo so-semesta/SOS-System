@@ -30,12 +30,20 @@ export function TimerWidget() {
     return () => clearInterval(interval);
   }, [swIsRunning]);
 
+  const playAlarm = () => {
+    try {
+      const audio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
+      audio.play().catch(e => console.log('Audio play blocked:', e));
+    } catch (e) {}
+  };
+
   useEffect(() => {
     let interval: any;
     if (pmIsRunning && pmTime > 0) {
       interval = setInterval(() => setPmTime(t => t - 1), 1000);
-    } else if (pmTime === 0) {
+    } else if (pmIsRunning && pmTime === 0) {
       setPmIsRunning(false);
+      playAlarm();
     }
     return () => clearInterval(interval);
   }, [pmIsRunning, pmTime]);

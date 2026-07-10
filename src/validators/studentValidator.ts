@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 const AddressSchema = z.object({
-  street: z.string().min(1, 'Jalan wajib diisi'),
-  number: z.string().min(1, 'No wajib diisi'),
-  rtRw: z.string().min(1, 'RT/RW wajib diisi'),
-  village: z.string().min(1, 'Kelurahan wajib diisi'),
-  district: z.string().min(1, 'Kecamatan wajib diisi'),
-  city: z.string().min(1, 'Kab/Kota wajib diisi'),
-  province: z.string().min(1, 'Provinsi wajib diisi'),
-  postalCode: z.string().min(1, 'Kode Pos wajib diisi'),
+  street: z.string().optional(),
+  number: z.string().optional(),
+  rtRw: z.string().optional(),
+  village: z.string().optional(),
+  district: z.string().optional(),
+  city: z.string().optional(),
+  province: z.string().optional(),
+  postalCode: z.string().optional(),
 });
 
 const DocumentsSchema = z.object({
@@ -22,42 +22,42 @@ const DocumentsSchema = z.object({
 export const StudentFormSchema = z.object({
   // Pribadi
   fullName: z.string().min(1, 'Nama Lengkap wajib diisi'),
-  nisn: z.string().min(1, 'NISN wajib diisi'),
-  grade: z.string().min(1, 'Kelas wajib diisi'),
-  osnField: z.string().min(1, 'Bidang OSN wajib diisi'),
-  nik: z.string().min(1, 'NIK wajib diisi'),
-  religion: z.string().min(1, 'Agama wajib diisi'),
-  birthPlace: z.string().min(1, 'Tempat Lahir wajib diisi'),
-  birthDate: z.string().min(1, 'Tanggal Lahir wajib diisi'), // We'll convert to timestamp later
+  nisn: z.string().optional(),
+  grade: z.string().optional(),
+  osnField: z.string().optional(),
+  nik: z.string().optional(),
+  religion: z.string().optional(),
+  birthPlace: z.string().optional(),
+  birthDate: z.string().optional(), 
   specialNeeds: z.string().optional(),
-  isColorBlind: z.boolean(),
-  weightKg: z.number().min(1, 'Berat Badan wajib diisi'),
-  heightCm: z.number().min(1, 'Tinggi Badan wajib diisi'),
+  isColorBlind: z.boolean().optional(),
+  weightKg: z.number().optional().or(z.nan()),
+  heightCm: z.number().optional().or(z.nan()),
   
   // Kontak
-  activeEmail: z.string().email('Email tidak valid'),
-  semestaEmail: z.string().email('Email tidak valid').optional(),
-  activePhoneWA: z.string().min(1, 'No HP (WA) wajib diisi'),
+  activeEmail: z.string().email('Email tidak valid').optional().or(z.literal('')),
+  semestaEmail: z.string().email('Email tidak valid').optional().or(z.literal('')),
+  activePhoneWA: z.string().optional(),
   
   // Alamat Singkat
-  homeAddress: z.string().min(1, 'Alamat Rumah singkat wajib diisi'),
-  houseNumber: z.string().min(1, 'No Rumah wajib diisi'),
-  rtRw: z.string().min(1, 'RT/RW singkat wajib diisi'),
-  postalCode: z.string().min(1, 'Kode Pos singkat wajib diisi'),
+  homeAddress: z.string().optional(),
+  houseNumber: z.string().optional(),
+  rtRw: z.string().optional(),
+  postalCode: z.string().optional(),
 
   // Alamat Lengkap
-  fullAddress: AddressSchema,
+  fullAddress: AddressSchema.optional(),
 
   // Orang Tua
-  motherName: z.string().min(1, 'Nama Ibu wajib diisi'),
-  motherNik: z.string().min(1, 'NIK Ibu wajib diisi'),
-  motherOccupation: z.string().min(1, 'Pekerjaan Ibu wajib diisi'),
-  motherEducation: z.string().min(1, 'Pendidikan Ibu wajib diisi'),
-  fatherName: z.string().min(1, 'Nama Ayah wajib diisi'),
-  fatherNik: z.string().min(1, 'NIK Ayah wajib diisi'),
-  fatherOccupation: z.string().min(1, 'Pekerjaan Ayah wajib diisi'),
-  fatherEducation: z.string().min(1, 'Pendidikan Ayah wajib diisi'),
-  guardianContact: z.string().optional(), // Or mandatory?
+  motherName: z.string().optional(),
+  motherNik: z.string().optional(),
+  motherOccupation: z.string().optional(),
+  motherEducation: z.string().optional(),
+  fatherName: z.string().optional(),
+  fatherNik: z.string().optional(),
+  fatherOccupation: z.string().optional(),
+  fatherEducation: z.string().optional(),
+  guardianContact: z.string().optional(),
 
   documents: DocumentsSchema.optional(),
   

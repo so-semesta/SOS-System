@@ -44,7 +44,7 @@ export function StudentProfileForm({ initialData, studentId, onSave, isLoading }
 
   const onSubmit = (values: StudentFormValues) => {
     try {
-      const birthDateTimestamp = new Date(values.birthDate).getTime();
+      const birthDateTimestamp = values.birthDate ? new Date(values.birthDate).getTime() : undefined;
       const updatedData: Partial<Student> = {
         ...values,
         documents: values.documents as any,

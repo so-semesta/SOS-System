@@ -309,7 +309,7 @@ export function Competitions() {
                 const isGold = comp.curationColor === CurationColor.GOLD;
                 
                 return (
-                  <Card key={comp.id} className={`flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-300' : isYellow ? 'bg-[#fefce8] border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
+                  <Card key={comp.id} className={`flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-yellow-200 via-amber-300 to-yellow-500 border-amber-500' : isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
                     {comp.posterUrl ? (
                       <div className="aspect-video w-full overflow-hidden bg-muted">
                         <img src={comp.posterUrl} alt={comp.title} className="object-cover w-full h-full" />
