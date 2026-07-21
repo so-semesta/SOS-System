@@ -49,6 +49,23 @@ export function PublicHome() {
   const navigate = useNavigate();
   const { currentUser, loginWithGoogle } = useAuth();
   
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 11) return 'pagi';
+    if (hour < 15) return 'siang';
+    if (hour < 18) return 'sore';
+    return 'malam';
+  };
+
+  const handleContactCoordinator = (e: React.MouseEvent, gender: 'Putra' | 'Putri', compName: string) => {
+    e.stopPropagation();
+    const phone = gender === 'Putra' ? '6285729660235' : '6281336869545';
+    const title = gender === 'Putra' ? 'Mr' : 'Miss';
+    const greeting = getGreeting();
+    const message = `Selamat ${greeting} ${title},\nSaya [Nama] dari [kelas/bidang]\nSaya ingin bertanya terkait lomba ${compName}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [registrationsMap, setRegistrationsMap] = useState<Record<string, Registration[]>>({});
   const [loading, setLoading] = useState(true);
@@ -367,10 +384,21 @@ export function PublicHome() {
                           </div>
                         </div>
                       </CardContent>
-                      <CardFooter className={`pt-4 border-t ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
+                      <CardFooter className={`pt-4 border-t flex flex-col items-stretch gap-3 ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
                         <Button className="w-full" onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
                           Daftar Lomba
                         </Button>
+                        <div className="w-full pt-2 border-t border-dashed">
+                          <p className="text-xs font-semibold text-muted-foreground mb-2 text-center">Tanya Koordinator SOS via WA:</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putra', comp.title)}>
+                              Putra
+                            </Button>
+                            <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putri', comp.title)}>
+                              Putri
+                            </Button>
+                          </div>
+                        </div>
                       </CardFooter>
                     </Card>
                   );

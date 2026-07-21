@@ -30,7 +30,6 @@ type GuidanceFormValues = z.infer<typeof GuidanceFormSchema>;
 const MOOD_EMOJIS = {
   [Mood.GREAT]: '🤩 Sangat Baik',
   [Mood.GOOD]: '😊 Baik',
-  [Mood.NEUTRAL]: '😐 Biasa Saja',
   [Mood.BAD]: '😔 Sedih/Lelah',
   [Mood.TERRIBLE]: '😭 Sangat Buruk',
 };
@@ -47,7 +46,7 @@ export function Guidance() {
       questionsCompleted: 0,
       summaryPages: 0,
       studyHours: 1,
-      mood: Mood.NEUTRAL,
+      mood: Mood.GOOD,
       psychologicalNotes: '',
     },
   });

@@ -21,7 +21,6 @@ import { format } from 'date-fns';
 const MOOD_EMOJIS = {
   [Mood.GREAT]: '🤩 Sangat Baik',
   [Mood.GOOD]: '😊 Baik',
-  [Mood.NEUTRAL]: '😐 Biasa Saja',
   [Mood.BAD]: '😔 Sedih/Lelah',
   [Mood.TERRIBLE]: '😭 Sangat Buruk',
 };
@@ -31,8 +30,6 @@ const getMoodBadgeColor = (mood: Mood) => {
     case Mood.GREAT:
     case Mood.GOOD:
       return 'bg-green-100 text-green-800 border-green-200';
-    case Mood.NEUTRAL:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
     case Mood.BAD:
     case Mood.TERRIBLE:
       return 'bg-red-100 text-red-800 border-red-200';

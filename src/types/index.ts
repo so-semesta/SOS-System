@@ -173,7 +173,6 @@ export interface OSN {
 export enum Mood {
   GREAT = 'GREAT',
   GOOD = 'GOOD',
-  NEUTRAL = 'NEUTRAL',
   BAD = 'BAD',
   TERRIBLE = 'TERRIBLE',
 }

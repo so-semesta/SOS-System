@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration } from '../../services/competitionService';
-import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType } from '../../types';
+import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations } from '../../services/competitionService';
+import { getStudentProfile } from '../../services/studentService';
+import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student } from '../../types';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -44,9 +45,39 @@ export function Competitions() {
   
   const [selectedComp, setSelectedComp] = useState<Competition | null>(null);
   const [isApplying, setIsApplying] = useState(false);
+  const [conflictCompTitle, setConflictCompTitle] = useState<string | null>(null);
+  const [studentData, setStudentData] = useState<Student | null>(null);
 
   const [selectedMyReg, setSelectedMyReg] = useState<Registration | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  const [allRegistrations, setAllRegistrations] = useState<Registration[]>([]);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 11) return 'pagi';
+    if (hour < 15) return 'siang';
+    if (hour < 18) return 'sore';
+    return 'malam';
+  };
+
+  const handleContactCoordinator = (e: React.MouseEvent, gender: 'Putra' | 'Putri', compName: string) => {
+    e.stopPropagation();
+    const phone = gender === 'Putra' ? '6285729660235' : '6281336869545';
+    const title = gender === 'Putra' ? 'Mr' : 'Miss';
+    const greeting = getGreeting();
+    
+    let introduction = "";
+    if (studentData) {
+      const fieldOrGrade = studentData.osnField || studentData.grade || '';
+      introduction = `\nSaya ${studentData.fullName || userProfile?.name || ''}${fieldOrGrade ? ` dari bidang/kelas ${fieldOrGrade}` : ''}`;
+    } else if (userProfile?.name) {
+      introduction = `\nSaya ${userProfile.name}`;
+    }
+
+    const message = `Selamat ${greeting} ${title},${introduction}\nSaya ingin bertanya terkait lomba ${compName}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
 
   const loadData = async () => {
     if (!currentUser) return;
@@ -54,8 +85,12 @@ export function Competitions() {
       const comps = await getAllCompetitions();
       const approvedComps = comps.filter(c => c.isApproved !== false || c.proposedByUserId === currentUser.uid);
       const regs = await getStudentRegistrations(currentUser.uid);
+      const profile = await getStudentProfile(currentUser.uid);
+      const allRegs = await getAllRegistrations();
       setCompetitions(approvedComps);
       setRegistrations(regs);
+      setAllRegistrations(allRegs);
+      setStudentData(profile);
     } catch (error) {
       toast.error('Gagal memuat katalog lomba');
     } finally {
@@ -91,19 +126,21 @@ export function Competitions() {
     return registrations.find(r => r.competitionId === compId);
   };
 
-  const handleApply = async () => {
+  const handleApply = async (force: boolean = false) => {
     if (!currentUser || !selectedComp) return;
     
     setIsApplying(true);
     try {
-      // Check schedule conflict
-      const conflictCompTitle = await checkScheduleConflict(currentUser.uid, selectedComp);
-      if (conflictCompTitle) {
-        toast.error(`Gagal mendaftar. Terdapat jadwal yang bertabrakan dengan lomba: ${conflictCompTitle}`);
-        return;
+      if (!force) {
+        // Check schedule conflict
+        const conflict = await checkScheduleConflict(currentUser.uid, selectedComp);
+        if (conflict) {
+          setConflictCompTitle(conflict);
+          return;
+        }
       }
 
-      // No conflict, proceed
+      // No conflict or forced, proceed
       const newRegId = `reg_${Date.now()}`;
       await applyForCompetition(newRegId, {
         studentId: currentUser.uid,
@@ -117,6 +154,7 @@ export function Competitions() {
 
       toast.success('Pengajuan perizinan berhasil dikirim!');
       setSelectedComp(null);
+      setConflictCompTitle(null);
       loadData(); // Reload registrations
     } catch (error) {
       toast.error('Terjadi kesalahan saat mengajukan perizinan');
@@ -356,6 +394,20 @@ export function Competitions() {
                         </Badge>
                       )}
                     </CardContent>
+                    
+                    <CardFooter className="pt-0 pb-4">
+                      <div className="w-full border-t pt-3 mt-1">
+                        <p className="text-xs font-semibold text-muted-foreground mb-2 text-center">Tanya Koordinator SOS via WA:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putra', comp.title)}>
+                            Putra
+                          </Button>
+                          <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putri', comp.title)}>
+                            Putri
+                          </Button>
+                        </div>
+                      </div>
+                    </CardFooter>
                   </Card>
                 );
               })}
@@ -471,6 +523,28 @@ export function Competitions() {
               </div>
 
               <div>
+                <p className="font-semibold text-muted-foreground text-sm mb-1">Siswa Terdaftar</p>
+                <div className="rounded-md border p-3 bg-muted/20 text-sm space-y-2">
+                  {(() => {
+                    const students = allRegistrations
+                      .filter(r => r.competitionId === selectedComp.id)
+                      .map(r => r.studentName);
+                    
+                    if (students.length > 0) {
+                      return (
+                        <ul className="list-disc pl-5 space-y-1">
+                          {Array.from(new Set(students)).map((name, i) => (
+                            <li key={i}>{name}</li>
+                          ))}
+                        </ul>
+                      );
+                    }
+                    return <p className="text-muted-foreground">Belum ada siswa yang terdaftar.</p>;
+                  })()}
+                </div>
+              </div>
+
+              <div>
                 <p className="font-semibold text-muted-foreground text-sm mb-1">Deskripsi & Broadcast</p>
                 <p className="text-sm whitespace-pre-wrap">{selectedComp.description || '-'}</p>
               </div>
@@ -496,7 +570,7 @@ export function Competitions() {
                   );
                 }
                 return (
-                  <Button onClick={handleApply} disabled={isApplying} className="w-full sm:w-auto">
+                  <Button onClick={() => handleApply()} disabled={isApplying} className="w-full sm:w-auto">
                     {isApplying ? 'Mengajukan...' : 'Ajukan Perizinan'}
                   </Button>
                 );
@@ -586,6 +660,30 @@ export function Competitions() {
             </DialogFooter>
           </DialogContent>
         )}
+      </Dialog>
+
+      <Dialog open={!!conflictCompTitle} onOpenChange={(open) => !open && setConflictCompTitle(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-orange-600 flex items-center gap-2">
+              ⚠️ Peringatan Tabrakan Jadwal
+            </DialogTitle>
+            <DialogDescription>
+              Terdapat jadwal yang bertabrakan dengan lomba yang telah Anda ikuti: <strong>{conflictCompTitle}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Sistem mendeteksi bahwa jadwal lomba ini berpotensi bertepatan dengan lomba lain yang sudah Anda setujui atau daftarkan. Apakah Anda tetap ingin memaksa (force) pendaftaran?
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConflictCompTitle(null)}>Batal</Button>
+            <Button variant="destructive" onClick={() => handleApply(true)} disabled={isApplying}>
+              {isApplying ? 'Memproses...' : 'Tetap Daftar (Force)'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

@@ -4,6 +4,7 @@ import { Menu, User, LogOut } from 'lucide-react';
 import { Button } from '../ui/button';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
+import { NotificationsWidget } from './NotificationsWidget';
 
 interface NavbarProps {
   toggleSidebar: () => void;
@@ -25,6 +26,7 @@ export function Navbar({ toggleSidebar }: NavbarProps) {
       <div className="flex flex-1 items-center justify-end gap-4 md:justify-end">
         {currentUser ? (
           <div className="flex items-center gap-4">
+            <NotificationsWidget />
             <div className="hidden flex-col items-end sm:flex">
               <span className="text-sm font-medium">{userProfile?.name || currentUser.email}</span>
               <span className="text-xs text-muted-foreground capitalize">{userProfile?.role || 'User'}</span>

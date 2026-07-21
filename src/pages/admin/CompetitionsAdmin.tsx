@@ -17,6 +17,7 @@ export function CompetitionsAdmin() {
   const [editingComp, setEditingComp] = useState<Competition | null>(null);
   const [deletingCompId, setDeletingCompId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [clashFilter, setClashFilter] = useState<string>('all');
 
   const loadData = async () => {
     try {
@@ -34,9 +35,11 @@ export function CompetitionsAdmin() {
     loadData();
   }, []);
 
-  const clashes = useMemo(() => {
+  const { clashes, clashingComps } = useMemo(() => {
     const activeComps = competitions.filter(c => c.status === CompetitionStatus.OPEN);
-    const issues: string[] = [];
+    const issuesMap: { date: number, dateStr: string, text: string, compIds: string[] }[] = [];
+    const clashingCompIds = new Set<string>();
+    const clashingCompsMap = new Map<string, Competition>();
     
     // Check for timeline overlaps (same day)
     for (let i = 0; i < activeComps.length; i++) {
@@ -47,16 +50,27 @@ export function CompetitionsAdmin() {
         // Check rounds
         c1.rounds.forEach(r1 => {
           c2.rounds.forEach(r2 => {
-            const d1 = new Date(r1.date).toDateString();
-            const d2 = new Date(r2.date).toDateString();
-            if (d1 === d2) {
-              issues.push(`Tabrakan Jadwal: Lomba "${c1.title}" (Babak ${r1.name}) bertabrakan dengan Lomba "${c2.title}" (Babak ${r2.name}) pada tanggal ${d1}`);
+            const date1 = new Date(r1.date);
+            const date2 = new Date(r2.date);
+            if (date1.toDateString() === date2.toDateString()) {
+              issuesMap.push({
+                date: date1.getTime(),
+                dateStr: date1.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                text: `Lomba "${c1.title}" (${r1.name}) bertabrakan dengan Lomba "${c2.title}" (${r2.name})`,
+                compIds: [c1.id, c2.id]
+              });
+              clashingCompIds.add(c1.id);
+              clashingCompIds.add(c2.id);
+              clashingCompsMap.set(c1.id, c1);
+              clashingCompsMap.set(c2.id, c2);
             }
           });
         });
       }
     }
-    return issues;
+
+    issuesMap.sort((a, b) => a.date - b.date);
+    return { clashes: issuesMap, clashingComps: Array.from(clashingCompsMap.values()) };
   }, [competitions]);
 
   const triggerDelete = (id: string) => {
@@ -144,9 +158,14 @@ export function CompetitionsAdmin() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-orange-900">
+            <ul className="space-y-3 text-sm text-orange-900 mt-2">
               {clashes.map((issue, idx) => (
-                <li key={idx}>{issue}</li>
+                <li key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <Badge variant="outline" className="bg-orange-100 border-orange-300 text-orange-800 shrink-0 text-xs px-2 py-0.5">
+                    {issue.dateStr}
+                  </Badge>
+                  <span className="font-medium">{issue.text}</span>
+                </li>
               ))}
             </ul>
           </CardContent>
@@ -156,11 +175,24 @@ export function CompetitionsAdmin() {
       <CompetitionForm onSuccess={loadData} />
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="text-xl font-bold tracking-tight">Daftar Lomba Aktif</h3>
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            <Download className="w-4 h-4 mr-2" /> Ekspor CSV
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <select 
+              className="flex h-9 w-full sm:w-[250px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              value={clashFilter}
+              onChange={(e) => setClashFilter(e.target.value)}
+            >
+              <option value="all">Semua Lomba</option>
+              <option value="has_clash">Hanya Lomba Tabrakan</option>
+              {clashingComps.map(c => (
+                <option key={c.id} value={c.id}>Tabrakan: {c.title}</option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" onClick={handleExportCSV}>
+              <Download className="w-4 h-4 mr-2" /> Ekspor CSV
+            </Button>
+          </div>
         </div>
         <div className="rounded-md border bg-card">
           <Table>
@@ -181,7 +213,15 @@ export function CompetitionsAdmin() {
               ) : competitions.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="text-center h-24">Belum ada lomba</TableCell></TableRow>
               ) : (
-                competitions.map((c) => (
+                competitions
+                  .filter(c => {
+                    if (clashFilter === 'all') return true;
+                    if (clashFilter === 'has_clash') {
+                      return clashingComps.some(cc => cc.id === c.id);
+                    }
+                    return clashFilter === c.id || clashes.some(clash => clash.compIds.includes(clashFilter) && clash.compIds.includes(c.id));
+                  })
+                  .map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.title}</TableCell>
                     <TableCell>{Array.isArray(c.field) ? c.field.join(', ') : c.field}</TableCell>
