@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations } from '../../services/competitionService';
+import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations, updateRegistrationStatus } from '../../services/competitionService';
 import { getStudentProfile } from '../../services/studentService';
 import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student } from '../../types';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Switch } from '../../components/ui/switch';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
@@ -46,6 +47,9 @@ export function Competitions() {
   const [selectedComp, setSelectedComp] = useState<Competition | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [conflictCompTitle, setConflictCompTitle] = useState<string | null>(null);
+  const [pendingRegDirectly, setPendingRegDirectly] = useState(false);
+  const [showRegistrationCheck, setShowRegistrationCheck] = useState(false);
+  const [isLateRegistration, setIsLateRegistration] = useState(false);
   const [studentData, setStudentData] = useState<Student | null>(null);
 
   const [selectedMyReg, setSelectedMyReg] = useState<Registration | null>(null);
@@ -126,7 +130,7 @@ export function Competitions() {
     return registrations.find(r => r.competitionId === compId);
   };
 
-  const handleApply = async (force: boolean = false) => {
+  const handleApply = async (force: boolean = false, isRegisteredDirectly: boolean = false) => {
     if (!currentUser || !selectedComp) return;
     
     setIsApplying(true);
@@ -136,6 +140,7 @@ export function Competitions() {
         const conflict = await checkScheduleConflict(currentUser.uid, selectedComp);
         if (conflict) {
           setConflictCompTitle(conflict);
+          setPendingRegDirectly(isRegisteredDirectly);
           return;
         }
       }
@@ -569,8 +574,12 @@ export function Competitions() {
                     </Button>
                   );
                 }
+                const isDeadlinePassed = new Date(selectedComp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0);
                 return (
-                  <Button onClick={() => handleApply()} disabled={isApplying} className="w-full sm:w-auto">
+                  <Button onClick={() => {
+                    setIsLateRegistration(isDeadlinePassed);
+                    setShowRegistrationCheck(true);
+                  }} disabled={isApplying} className="w-full sm:w-auto">
                     {isApplying ? 'Mengajukan...' : 'Ajukan Perizinan'}
                   </Button>
                 );
@@ -602,6 +611,22 @@ export function Competitions() {
               {selectedMyReg.status === RegistrationStatus.APPROVED && (
                 <div>
                   <p className="font-semibold text-muted-foreground text-sm mb-2 mt-4">Checklist Progres Lomba</p>
+                  <div className="flex items-center justify-between p-3 border rounded-md bg-muted/10 mb-4">
+                    <span className="font-medium text-sm">Sudah Mendaftar ke Penyelenggara?</span>
+                    <Switch
+                      checked={!!selectedMyReg.isRegisteredDirectly}
+                      onCheckedChange={async (checked) => {
+                        try {
+                          await updateRegistrationStatus(selectedMyReg.id, selectedMyReg.status, selectedMyReg.roundsChecklist, checked);
+                          setSelectedMyReg({ ...selectedMyReg, isRegisteredDirectly: checked });
+                          setRegistrations(registrations.map(r => r.id === selectedMyReg.id ? { ...r, isRegisteredDirectly: checked } : r));
+                          toast.success('Status pendaftaran berhasil diperbarui');
+                        } catch (e) {
+                          toast.error('Gagal memperbarui status');
+                        }
+                      }}
+                    />
+                  </div>
                   {selectedMyReg.roundsChecklist && selectedMyReg.roundsChecklist.length > 0 ? (
                     <div className="space-y-3">
                       {selectedMyReg.roundsChecklist.map((rc, idx) => (
@@ -679,10 +704,46 @@ export function Competitions() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConflictCompTitle(null)}>Batal</Button>
-            <Button variant="destructive" onClick={() => handleApply(true)} disabled={isApplying}>
+            <Button variant="destructive" onClick={() => handleApply(true, pendingRegDirectly)} disabled={isApplying}>
               {isApplying ? 'Memproses...' : 'Tetap Daftar (Force)'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration Check Dialog */}
+      <Dialog open={showRegistrationCheck} onOpenChange={setShowRegistrationCheck}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isLateRegistration ? "Peringatan Batas Waktu" : "Konfirmasi Pendaftaran"}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm mb-4">
+              {isLateRegistration 
+                ? "Masa pendaftaran resmi untuk lomba ini sudah lewat. Apakah Anda sudah mengisi formulir pendaftaran perlombaan secara langsung ke pihak penyelenggara?"
+                : "Apakah Anda sudah mengisi formulir pendaftaran perlombaan secara langsung ke pihak penyelenggara?"}
+            </p>
+            <div className="flex flex-col gap-3">
+              <Button onClick={() => {
+                setShowRegistrationCheck(false);
+                handleApply(false, true); 
+              }} className="w-full bg-green-600 hover:bg-green-700">
+                Ya, Saya Sudah Mendaftar
+              </Button>
+              {isLateRegistration ? (
+                 <Button variant="outline" onClick={() => setShowRegistrationCheck(false)} className="w-full text-red-600 border-red-200 hover:bg-red-50">
+                   Belum Mendaftar (Tidak dapat mengajukan izin)
+                 </Button>
+              ) : (
+                 <Button variant="outline" onClick={() => {
+                   setShowRegistrationCheck(false);
+                   handleApply(false, false);
+                 }} className="w-full text-blue-600 border-blue-200 hover:bg-blue-50">
+                   Belum, Saya Hanya Mengajukan Izin
+                 </Button>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

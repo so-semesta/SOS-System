@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
 import { Checkbox } from '../../components/ui/checkbox';
+import { Switch } from '../../components/ui/switch';
 import { Search, CheckCircle2, XCircle, Eye, Download, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -397,6 +398,23 @@ export function RegistrationApprovals() {
             {selectedReg?.status === RegistrationStatus.APPROVED && (
               <div className="bg-muted/20 p-4 rounded-lg">
                 <h3 className="font-semibold text-lg border-b pb-2 mb-4">Checklist Progres Lomba & Hasil Akhir</h3>
+                
+                <div className="flex items-center justify-between p-3 border rounded-md bg-muted/10 mb-6">
+                  <span className="font-medium text-sm">Sudah Mendaftar ke Penyelenggara?</span>
+                  <Switch
+                    checked={!!selectedReg.isRegisteredDirectly}
+                    onCheckedChange={async (checked) => {
+                      try {
+                        await updateRegistration(selectedReg.id, { isRegisteredDirectly: checked });
+                        setSelectedReg({ ...selectedReg, isRegisteredDirectly: checked });
+                        setRegistrations(prev => prev.map(r => r.id === selectedReg.id ? { ...r, isRegisteredDirectly: checked } : r));
+                        toast.success('Status pendaftaran penyelenggara diperbarui');
+                      } catch (error) {
+                        toast.error('Gagal mengupdate status pendaftaran');
+                      }
+                    }}
+                  />
+                </div>
                 
                 {selectedReg.roundsChecklist && selectedReg.roundsChecklist.length > 0 && (
                   <div className="space-y-4 mb-6">

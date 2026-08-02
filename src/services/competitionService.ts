@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Competition, Registration, RegistrationStatus, CompetitionRound } from '../types';
+import { Competition, Registration, RegistrationStatus, CompetitionRound, RoundChecklist } from '../types';
 
 export const createCompetition = async (id: string, data: Omit<Competition, 'id'>) => {
   await setDoc(doc(db, 'competitions', id), data);
@@ -52,11 +52,20 @@ export const updateRegistration = async (registrationId: string, data: Partial<R
   await updateDoc(doc(db, 'registrations', registrationId), data);
 };
 
-export const updateRegistrationStatus = async (registrationId: string, status: RegistrationStatus) => {
-  await updateDoc(doc(db, 'registrations', registrationId), {
+export const updateRegistrationStatus = async (
+  registrationId: string, 
+  status: RegistrationStatus, 
+  roundsChecklist?: RoundChecklist[],
+  isRegisteredDirectly?: boolean
+) => {
+  const updates: any = {
     status,
     updatedAt: Date.now()
-  });
+  };
+  if (roundsChecklist !== undefined) updates.roundsChecklist = roundsChecklist;
+  if (isRegisteredDirectly !== undefined) updates.isRegisteredDirectly = isRegisteredDirectly;
+  
+  await updateDoc(doc(db, 'registrations', registrationId), updates);
 };
 
 /**

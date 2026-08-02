@@ -1,79 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { Clock, Play, Pause, RotateCcw, X, Timer, Maximize, Minimize } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
-import { UserRole } from '../../types/auth';
-import { useLocation } from 'react-router-dom';
+const fs = require('fs');
 
-export function TimerWidget() {
-  const { userRole } = useAuth();
-  const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [targetBelajar, setTargetBelajar] = useState('');
-  
-  // Stopwatch State
-  const [swTime, setSwTime] = useState(0);
-  const [swIsRunning, setSwIsRunning] = useState(false);
-  
-  // Pomodoro State
-  const [pmTime, setPmTime] = useState(25 * 60);
-  const [pmCustomMinutes, setPmCustomMinutes] = useState('25');
-  const [pmIsRunning, setPmIsRunning] = useState(false);
-  
-  useEffect(() => {
-    let interval: any;
-    if (swIsRunning) {
-      interval = setInterval(() => setSwTime(t => t + 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [swIsRunning]);
+let content = fs.readFileSync('src/components/layout/TimerWidget.tsx', 'utf8');
 
-  const playAlarm = () => {
-    try {
-      const audio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
-      audio.play().catch(e => console.log('Audio play blocked:', e));
-    } catch (e) {}
-  };
+// Add Maximize icon
+if (!content.includes('Maximize')) {
+    content = content.replace("from 'lucide-react';", "Maximize, Minimize } from 'lucide-react';");
+}
 
-  useEffect(() => {
-    let interval: any;
-    if (pmIsRunning && pmTime > 0) {
-      interval = setInterval(() => setPmTime(t => t - 1), 1000);
-    } else if (pmIsRunning && pmTime === 0) {
-      setPmIsRunning(false);
-      playAlarm();
-    }
-    return () => clearInterval(interval);
-  }, [pmIsRunning, pmTime]);
+// Add state
+const stateCode = `  const [isFullscreen, setIsFullscreen] = useState(false);\n  const [targetBelajar, setTargetBelajar] = useState('');`;
+if (!content.includes('isFullscreen')) {
+    content = content.replace("const [isOpen, setIsOpen] = useState(false);", "const [isOpen, setIsOpen] = useState(false);\n" + stateCode);
+}
 
+// Fullscreen toggle logic
+const renderCode = `
   if (userRole !== UserRole.STUDENT) {
     return null;
   }
+`;
 
-  const formatTime = (totalSeconds: number) => {
-    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-    const s = (totalSeconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
-  const handlePmStart = () => {
-    if (!pmIsRunning && pmTime === 0) {
-      setPmTime(parseInt(pmCustomMinutes) * 60 || 25 * 60);
-    }
-    setPmIsRunning(true);
-  };
-
-  const handlePmReset = () => {
-    setPmIsRunning(false);
-    setPmTime(parseInt(pmCustomMinutes) * 60 || 25 * 60);
-  };
-
+const updatedReturn = `
   return (
-    <div className={`${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-900 flex items-center justify-center p-4' : `fixed bottom-6 right-6 z-50 flex flex-col items-end ${location.pathname === '/guidance' ? '' : 'hidden'}`}`}>
+    <div className={\`\${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-900 flex items-center justify-center p-4' : \`fixed bottom-6 right-6 z-50 flex flex-col items-end \${location.pathname === '/guidance' ? '' : 'hidden'}\`}\`}>
       {isOpen && !isFullscreen && (
         <Card className="mb-4 w-80 shadow-xl border-primary/20 animate-in slide-in-from-bottom-5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50 rounded-t-xl">
@@ -99,7 +48,6 @@ export function TimerWidget() {
                 <TabsTrigger value="stopwatch">Stopwatch</TabsTrigger>
                 <TabsTrigger value="pomodoro">Pomodoro</TabsTrigger>
               </TabsList>
-              
               <TabsContent value="stopwatch" className="space-y-4">
                 <div className="text-5xl font-mono text-center font-bold tracking-tight text-slate-800 py-6">
                   {formatTime(swTime)}
@@ -115,7 +63,6 @@ export function TimerWidget() {
                   </Button>
                 </div>
               </TabsContent>
-              
               <TabsContent value="pomodoro" className="space-y-4">
                 <div className="flex items-center space-x-2 mb-2">
                   <Input 
@@ -131,7 +78,7 @@ export function TimerWidget() {
                   />
                   <span className="text-sm text-slate-500">Menit</span>
                 </div>
-                <div className={`text-5xl font-mono text-center font-bold tracking-tight py-4 ${pmTime === 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
+                <div className={\`text-5xl font-mono text-center font-bold tracking-tight py-4 \${pmTime === 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}\`}>
                   {formatTime(pmTime)}
                 </div>
                 <div className="flex justify-center space-x-2">
@@ -202,7 +149,7 @@ export function TimerWidget() {
                 />
                 <span className="text-xl text-slate-400">Menit</span>
               </div>
-              <div className={`text-[6rem] sm:text-[8rem] leading-none font-mono text-center font-bold tracking-tighter py-6 ${pmTime === 0 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+              <div className={\`text-[6rem] sm:text-[8rem] leading-none font-mono text-center font-bold tracking-tighter py-6 \${pmTime === 0 ? 'text-red-500 animate-pulse' : 'text-white'}\`}>
                 {formatTime(pmTime)}
               </div>
               <div className="flex justify-center space-x-6 w-full">
@@ -231,4 +178,10 @@ export function TimerWidget() {
       )}
     </div>
   );
+`;
+
+const startIndex = content.indexOf('  return (');
+if (startIndex !== -1) {
+    content = content.substring(0, startIndex) + updatedReturn;
+    fs.writeFileSync('src/components/layout/TimerWidget.tsx', content);
 }

@@ -52,7 +52,9 @@ export function CompetitionsAdmin() {
           c2.rounds.forEach(r2 => {
             const date1 = new Date(r1.date);
             const date2 = new Date(r2.date);
-            if (date1.toDateString() === date2.toDateString()) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (date1.toDateString() === date2.toDateString() && date1 >= today) {
               issuesMap.push({
                 date: date1.getTime(),
                 dateStr: date1.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),

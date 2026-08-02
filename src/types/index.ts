@@ -140,6 +140,7 @@ export interface Registration {
   competitionId: string;
   competitionTitle: string;
   status: RegistrationStatus;
+  isRegisteredDirectly?: boolean;
   roundsChecklist?: RoundChecklist[];
   finalResult?: MedalType;
   createdAt: number;
