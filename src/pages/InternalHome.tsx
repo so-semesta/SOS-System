@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { getAllCompetitions, getAllRegistrations } from '../services/competitionService';
+import { getAllCompetitions, getAllRegistrations, updateCompetition, deleteCompetition } from '../services/competitionService';
 import { getOsnAnnouncement } from '../services/osnService';
 import { getStudentGuidanceLogs } from '../services/guidanceService';
 import { Competition, OsnAnnouncement, Registration, GuidanceLog, MedalType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
-import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink } from 'lucide-react';
+import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink, Trash2, CheckCircle } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
@@ -16,6 +16,8 @@ import { CurationColor, CompetitionStatus } from '../types';
 import { CompetitionForm } from '../components/features/competitions/CompetitionForm';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify from 'dompurify';
+import { toast } from 'sonner';
+import { ConfirmDeleteDialog } from '../components/ui/ConfirmDeleteDialog';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -80,6 +82,34 @@ export function InternalHome() {
   
   const [loading, setLoading] = useState(true);
   const [editingComp, setEditingComp] = useState<Competition | null>(null);
+  const [deletingCompId, setDeletingCompId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleApprove = async (e: React.MouseEvent, compId: string) => {
+    e.stopPropagation();
+    try {
+      await updateCompetition(compId, { isApproved: true });
+      toast.success('Lomba berhasil disetujui');
+      setCompetitions(competitions.map(c => c.id === compId ? { ...c, isApproved: true } : c));
+    } catch (error) {
+      toast.error('Gagal menyetujui lomba');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingCompId) return;
+    setIsDeleting(true);
+    try {
+      await deleteCompetition(deletingCompId);
+      toast.success('Lomba berhasil dihapus');
+      setCompetitions(competitions.filter(c => c.id !== deletingCompId));
+    } catch (error) {
+      toast.error('Gagal menghapus lomba');
+    } finally {
+      setIsDeleting(false);
+      setDeletingCompId(null);
+    }
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedField, setSelectedField] = useState('ALL');
@@ -470,6 +500,7 @@ export function InternalHome() {
                   const curation = formatCuration(comp.curationColor);
                   const isUnapproved = comp.isApproved === false;
                   const isDeadlinePassed = new Date(comp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0);
+                  const isManager = userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT;
                   
                   return (
                     <Card key={comp.id} className={`flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${isGold ? 'bg-gradient-to-br from-amber-200 via-yellow-400 to-amber-500 border-amber-600' : isYellow ? 'bg-yellow-50/70 border-yellow-200' : ''}`} onClick={() => setSelectedComp(comp)}>
@@ -535,6 +566,21 @@ export function InternalHome() {
                         </div>
                       </CardContent>
                       <CardFooter className={`pt-4 border-t flex flex-col items-stretch gap-3 ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
+                        {isManager && (
+                          <div className="flex gap-2 w-full">
+                            {isUnapproved && (
+                              <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={(e) => handleApprove(e, comp.id)}>
+                                <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingComp(comp); }}>
+                              <PenTool className="w-4 h-4 mr-1" /> Edit
+                            </Button>
+                            <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); setDeletingCompId(comp.id); }}>
+                              <Trash2 className="w-4 h-4 mr-1" /> Hapus
+                            </Button>
+                          </div>
+                        )}
                         <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigate('/competitions'); }}>
                           Daftar Lomba
                         </Button>
@@ -646,6 +692,13 @@ export function InternalHome() {
           </DialogContent>
         )}
       </Dialog>
+
+      <ConfirmDeleteDialog 
+        isOpen={!!deletingCompId} 
+        onClose={() => setDeletingCompId(null)} 
+        onConfirm={confirmDelete}
+        isLoading={isDeleting}
+      />
 </div>
   );
 }
