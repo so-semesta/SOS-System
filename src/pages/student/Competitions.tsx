@@ -727,19 +727,19 @@ export function Competitions() {
               <Button onClick={() => {
                 setShowRegistrationCheck(false);
                 handleApply(false, true); 
-              }} className="w-full bg-green-600 hover:bg-green-700">
-                Ya, Saya Sudah Mendaftar
+               }} className="w-full h-auto py-3 whitespace-normal text-left bg-green-600 hover:bg-green-700">
+                Ya, saya akan/sudah melakukan pendaftaran mandiri
               </Button>
               {isLateRegistration ? (
-                 <Button variant="outline" onClick={() => setShowRegistrationCheck(false)} className="w-full text-red-600 border-red-200 hover:bg-red-50">
+                 <Button variant="outline" onClick={() => setShowRegistrationCheck(false)} className="w-full h-auto py-3 whitespace-normal text-left text-red-600 border-red-200 hover:bg-red-50">
                    Belum Mendaftar (Tidak dapat mengajukan izin)
                  </Button>
               ) : (
                  <Button variant="outline" onClick={() => {
                    setShowRegistrationCheck(false);
                    handleApply(false, false);
-                 }} className="w-full text-blue-600 border-blue-200 hover:bg-blue-50">
-                   Belum, Saya Hanya Mengajukan Izin
+                 }} className="w-full h-auto py-3 whitespace-normal text-left text-blue-600 border-blue-200 hover:bg-blue-50">
+                   Belum, saya mau minta bantuan sekolah untuk mendaftarkan
                  </Button>
               )}
             </div>
