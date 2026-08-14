@@ -4,8 +4,8 @@ import { Bell } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Badge } from '../ui/badge';
-import { getAllCompetitions, getStudentRegistrations, getAllRegistrations } from '../../services/competitionService';
-import { getStudentGuidanceLogs, getAllGuidanceLogs } from '../../services/guidanceService';
+import { getAllCompetitions, getStudentRegistrations, getPendingRegistrationsCount } from '../../services/competitionService';
+import { getStudentGuidanceLogs, getTodayGuidanceLogs } from '../../services/guidanceService';
 import { getAllStudents } from '../../services/studentService';
 import { CompetitionStatus, RegistrationStatus } from '../../types';
 import { UserRole } from '../../types/auth';
@@ -70,18 +70,21 @@ export function NotificationsWidget() {
         }
       } else if (userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN) {
         // Request perizinan
-        const allRegs = await getAllRegistrations();
-        const pendingRegs = allRegs.filter(r => r.status === RegistrationStatus.PENDING);
-        if (pendingRegs.length > 0) {
+        const pendingCount = await getPendingRegistrationsCount();
+        if (pendingCount > 0) {
           notifs.push({
             title: 'Permintaan Perizinan',
-            desc: `Terdapat ${pendingRegs.length} permintaan perizinan lomba yang menunggu persetujuan.`,
+            desc: `Terdapat ${pendingCount} permintaan perizinan lomba yang menunggu persetujuan.`,
             type: 'warning'
           });
         }
         
         // Daily checkin hari ini yg belum
-        const allLogs = await getAllGuidanceLogs();
+        const startOfDay = new Date(today);
+        startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date(today);
+        endOfDay.setHours(23,59,59,999);
+        const allLogs = await getTodayGuidanceLogs(startOfDay.getTime(), endOfDay.getTime());
         const allStudents = await getAllStudents();
         
         const checkedInStudentIds = new Set(allLogs.filter(log => {

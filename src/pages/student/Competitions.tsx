@@ -55,8 +55,6 @@ export function Competitions() {
   const [selectedMyReg, setSelectedMyReg] = useState<Registration | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const [allRegistrations, setAllRegistrations] = useState<Registration[]>([]);
-
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 11) return 'pagi';
@@ -90,10 +88,8 @@ export function Competitions() {
       const approvedComps = comps.filter(c => c.isApproved !== false || c.proposedByUserId === currentUser.uid);
       const regs = await getStudentRegistrations(currentUser.uid);
       const profile = await getStudentProfile(currentUser.uid);
-      const allRegs = await getAllRegistrations();
       setCompetitions(approvedComps);
       setRegistrations(regs);
-      setAllRegistrations(allRegs);
       setStudentData(profile);
     } catch (error) {
       toast.error('Gagal memuat katalog lomba');
@@ -524,28 +520,6 @@ export function Competitions() {
                   )) : (
                     <p className="text-muted-foreground">Belum ada jadwal yang ditentukan.</p>
                   )}
-                </div>
-              </div>
-
-              <div>
-                <p className="font-semibold text-muted-foreground text-sm mb-1">Siswa Terdaftar</p>
-                <div className="rounded-md border p-3 bg-muted/20 text-sm space-y-2">
-                  {(() => {
-                    const students = allRegistrations
-                      .filter(r => r.competitionId === selectedComp.id)
-                      .map(r => r.studentName);
-                    
-                    if (students.length > 0) {
-                      return (
-                        <ul className="list-disc pl-5 space-y-1">
-                          {Array.from(new Set(students)).map((name, i) => (
-                            <li key={i}>{name}</li>
-                          ))}
-                        </ul>
-                      );
-                    }
-                    return <p className="text-muted-foreground">Belum ada siswa yang terdaftar.</p>;
-                  })()}
                 </div>
               </div>
 

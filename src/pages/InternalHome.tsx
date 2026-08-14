@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { getAllCompetitions, getAllRegistrations, updateCompetition, deleteCompetition } from '../services/competitionService';
+import { getAllCompetitions, getStudentRegistrations, updateCompetition, deleteCompetition } from '../services/competitionService';
 import { getOsnAnnouncement } from '../services/osnService';
 import { getStudentGuidanceLogs } from '../services/guidanceService';
 import { Competition, OsnAnnouncement, Registration, GuidanceLog, MedalType } from '../types';
@@ -128,7 +128,7 @@ export function InternalHome() {
         let guidancePromise: Promise<GuidanceLog[]> = Promise.resolve([]);
 
         if (userRole === UserRole.STUDENT && currentUser) {
-          regsPromise = getAllRegistrations();
+          regsPromise = getStudentRegistrations(currentUser.uid);
           guidancePromise = getStudentGuidanceLogs(currentUser.uid);
         }
 
@@ -146,14 +146,9 @@ export function InternalHome() {
         
         setCompetitions(filteredComps);
         setAnnouncement(ann);
-        const regsMap: Record<string, Registration[]> = {};
-        for (const comp of filteredComps) {
-          regsMap[comp.id] = regs.filter(r => r.competitionId === comp.id);
-        }
-        setRegistrationsMap(regsMap);
 
         if (userRole === UserRole.STUDENT && currentUser) {
-          setMyRegistrations(regs.filter(r => r.studentId === currentUser.uid));
+          setMyRegistrations(regs);
           setMyGuidanceLogs(guidance.sort((a, b) => a.date - b.date)); // sort by date ascending for chart
         }
 
@@ -493,8 +488,6 @@ export function InternalHome() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredCompetitions.map((comp) => {
-                  const regs = registrationsMap[comp.id] || [];
-                  const regCount = regs.length;
                   const isYellow = comp.curationColor === CurationColor.YELLOW;
                   const isGold = comp.curationColor === CurationColor.GOLD;
                   const curation = formatCuration(comp.curationColor);
@@ -539,29 +532,6 @@ export function InternalHome() {
                           <div className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${isDeadlinePassed ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
                             <CalendarIcon className="h-3 w-3 mr-1.5" />
                             <span>Batas Daftar: {format(new Date(comp.registrationDeadline), 'dd MMM yyyy', { locale: localeId })}</span>
-                          </div>
-                          
-                          <div className={`mt-4 pt-4 border-t ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
-                            <div className="flex items-center text-sm font-medium text-slate-900 mb-2">
-                              <Users className={`h-4 w-4 mr-2 ${isGold ? 'text-amber-600' : isYellow ? 'text-yellow-600' : 'text-primary'}`} />
-                              Pendaftar ({regCount})
-                            </div>
-                            {regCount > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {regs.slice(0, 5).map(r => (
-                                  <Badge key={r.id} variant="secondary" className={`text-xs font-normal ${isGold ? 'bg-amber-100 text-amber-900' : isYellow ? 'bg-yellow-100 text-yellow-800' : ''}`}>
-                                    {r.studentName || 'Anonim'}
-                                  </Badge>
-                                ))}
-                                {regCount > 5 && (
-                                  <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
-                                    +{regCount - 5} lainnya
-                                  </Badge>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Belum ada pendaftar</span>
-                            )}
                           </div>
                         </div>
                       </CardContent>

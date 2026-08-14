@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAllStudents } from '../../services/studentService';
-import { getAllCompetitions, getAllRegistrations } from '../../services/competitionService';
+import { getAllCompetitions, getAwardedRegistrations } from '../../services/competitionService';
 import { calculateAchievementPoints } from '../../services/achievementService';
 import { Student, Competition, Registration, MedalType } from '../../types';
 import { Trophy, Medal, Award, Crown } from 'lucide-react';
@@ -29,7 +29,7 @@ export function Leaderboard() {
         const [students, competitions, registrations] = await Promise.all([
           getAllStudents(),
           getAllCompetitions(),
-          getAllRegistrations(),
+          getAwardedRegistrations(),
         ]);
 
         const pointsMap: Record<string, number> = {};

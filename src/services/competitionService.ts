@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Competition, Registration, RegistrationStatus, CompetitionRound, RoundChecklist } from '../types';
 
@@ -39,6 +39,12 @@ export const getRegistrationsByCompetition = async (competitionId: string): Prom
   const q = query(collection(db, 'registrations'), where('competitionId', '==', competitionId));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Registration);
+};
+
+export const getRegistrationCountByCompetition = async (competitionId: string): Promise<number> => {
+  const q = query(collection(db, 'registrations'), where('competitionId', '==', competitionId));
+  const snapshot = await getCountFromServer(q);
+  return snapshot.data().count;
 };
 
 export const getAllRegistrations = async (): Promise<Registration[]> => {
@@ -105,4 +111,24 @@ export const checkScheduleConflict = async (studentId: string, targetCompetition
 
 export const applyForCompetition = async (registrationId: string, data: Omit<Registration, 'id'>) => {
   await setDoc(doc(db, 'registrations', registrationId), data);
+};
+
+export const getPendingRegistrationsCount = async (): Promise<number> => {
+  const q = query(collection(db, 'registrations'), where('status', '==', 'PENDING'));
+  const snapshot = await getCountFromServer(q);
+  return snapshot.data().count;
+};
+
+export const getAwardedRegistrations = async (): Promise<Registration[]> => {
+  const q = query(
+    collection(db, 'registrations'),
+    where('finalResult', 'in', ['GOLD', 'SILVER', 'BRONZE', 'FINALS', 'PARTICIPANT'])
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Registration));
+};
+
+export const getTotalRegistrationsCount = async (): Promise<number> => {
+  const snapshot = await getCountFromServer(collection(db, 'registrations'));
+  return snapshot.data().count;
 };

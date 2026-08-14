@@ -24,3 +24,13 @@ export const getAllGuidanceLogs = async (): Promise<GuidanceLog[]> => {
   const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GuidanceLog);
   return logs.sort((a, b) => b.date - a.date);
 };
+
+export const getTodayGuidanceLogs = async (startOfDay: number, endOfDay: number): Promise<GuidanceLog[]> => {
+  const q = query(
+    collection(db, 'guidanceLogs'),
+    where('date', '>=', startOfDay),
+    where('date', '<=', endOfDay)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GuidanceLog));
+};

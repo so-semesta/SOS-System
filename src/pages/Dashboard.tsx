@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { getAllStudents } from '../services/studentService';
-import { getAllCompetitions, getAllRegistrations } from '../services/competitionService';
+import { getAllCompetitions, getAwardedRegistrations, getTotalRegistrationsCount } from '../services/competitionService';
 import { Student, Competition, Registration, MedalType } from '../types';
 import { Users, Trophy, ClipboardList, Award } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -9,20 +9,23 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 export function Dashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [awardedRegistrations, setAwardedRegistrations] = useState<Registration[]>([]);
+  const [totalRegCount, setTotalRegCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [studs, comps, regs] = await Promise.all([
+        const [studs, comps, awardedRegs, regCount] = await Promise.all([
           getAllStudents(),
           getAllCompetitions(),
-          getAllRegistrations(),
+          getAwardedRegistrations(),
+          getTotalRegistrationsCount()
         ]);
         setStudents(studs);
         setCompetitions(comps);
-        setRegistrations(regs);
+        setAwardedRegistrations(awardedRegs);
+        setTotalRegCount(regCount);
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
       } finally {
@@ -39,12 +42,12 @@ export function Dashboard() {
   // Calculate some stats
   const totalStudents = students.length;
   const totalCompetitions = competitions.length;
-  const totalRegistrations = registrations.length;
+  const totalRegistrations = totalRegCount;
   
   let totalMedals = 0;
   let gold = 0, silver = 0, bronze = 0, participant = 0;
   
-  registrations.forEach(r => {
+  awardedRegistrations.forEach(r => {
     if (r.finalResult) {
       if (r.finalResult === MedalType.GOLD) gold++;
       if (r.finalResult === MedalType.SILVER) silver++;
