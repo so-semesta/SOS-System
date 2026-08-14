@@ -89,7 +89,7 @@ export function PublicHome() {
     const fetchData = async () => {
       try {
         const comps = await getAllCompetitions();
-        setCompetitions(comps);
+        setCompetitions(comps.filter(c => c.isApproved !== false));
       } catch (error) {
         console.error("Failed to fetch public competitions", error);
       } finally {

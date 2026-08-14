@@ -3,6 +3,7 @@ import { onAuthStateChanged, User, signOut as firebaseSignOut, signInWithPopup, 
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { UserRole, UserProfile } from '../types/auth';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -29,8 +30,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
       if (user) {
+        if (!user.email?.endsWith('@semesta.sch.id')) {
+          await firebaseSignOut(auth);
+          setCurrentUser(null);
+          setUserProfile(null);
+          setLoading(false);
+          toast.error('Sesi ditolak. Gunakan email @semesta.sch.id.');
+          return;
+        }
+
+        setCurrentUser(user);
         try {
           const docRef = doc(db, 'users', user.uid);
           const docSnap = await getDoc(docRef);
@@ -40,8 +50,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               await firebaseSignOut(auth);
               setUserProfile(null);
               setCurrentUser(null);
-              // We could show a toast here if we had access to it, but standard alert works for a force logout
-              alert('Akun Anda telah diblokir. Silakan hubungi administrator.');
+              toast.error('Akun Anda telah diblokir. Silakan hubungi administrator.');
             } else {
               setUserProfile(data);
             }
@@ -61,6 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.error("Error fetching user profile:", error);
         }
       } else {
+        setCurrentUser(null);
         setUserProfile(null);
       }
       setLoading(false);
@@ -74,6 +84,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
+
+      if (!user.email?.endsWith('@semesta.sch.id')) {
+        await firebaseSignOut(auth);
+        toast.error('Akses ditolak. Gunakan email @semesta.sch.id untuk login.');
+        return;
+      }
       
       const docRef = doc(db, 'users', user.uid);
       const docSnap = await getDoc(docRef);
@@ -88,6 +104,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
         await setDoc(docRef, newUserProfile);
         setUserProfile(newUserProfile);
+      } else {
+        const existingProfile = docSnap.data() as UserProfile;
+        if (existingProfile.isBlocked) {
+          await firebaseSignOut(auth);
+          toast.error('Akun Anda telah diblokir.');
+          return;
+        }
       }
     } catch (error: any) {
       if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
@@ -95,6 +118,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
       console.error("Error logging in with Google:", error);
+      toast.error('Gagal login dengan Google.');
       throw error;
     }
   };
