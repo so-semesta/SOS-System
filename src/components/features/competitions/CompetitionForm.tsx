@@ -419,6 +419,9 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                 <div className="flex gap-2">
                   <Input {...form.register('posterUrl')} placeholder="https://... (Kosongkan jika upload di atas)" className="flex-1" />
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  💡 Tips: Jika gambar dari Instagram, Anda bisa mengekstrak link-nya melalui <a href="https://fastdl.app/photo" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-medium">fastdl.app/photo</a>
+                </p>
                 {form.watch('posterUrl') && !previewUrl && (
                   <div className="mt-2 rounded-md overflow-hidden border bg-muted/50 w-full max-w-[200px]">
                     <img src={form.watch('posterUrl')} alt="Preview Poster" className="w-full h-auto object-cover" />
