@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '../../ui/button';
 import { Competition } from '../../../types';
 import { Download, Copy, MessageCircle } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import { format, differenceInDays } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -78,16 +78,15 @@ export function BroadcastDialog({ open, onOpenChange, competitions }: BroadcastD
     
     try {
       const toastId = toast.loading('Memproses gambar...');
-      // Ensure element is visible temporarily if needed, but absolute positioning usually works
-      const canvas = await html2canvas(downloadRef.current, {
-        scale: 2,
+      // html-to-image handles modern CSS (like Tailwind v4 oklch) much better than html2canvas
+      const dataUrl = await toPng(downloadRef.current, {
+        pixelRatio: 2,
         backgroundColor: '#ffffff',
-        useCORS: true,
+        skipFonts: false,
       });
       
-      const image = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.href = image;
+      link.href = dataUrl;
       link.download = `info-lomba-${format(new Date(), 'dd-MM-yyyy')}.png`;
       link.click();
       
