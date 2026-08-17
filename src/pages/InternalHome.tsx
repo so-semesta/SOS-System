@@ -7,13 +7,14 @@ import { getStudentGuidanceLogs } from '../services/guidanceService';
 import { Competition, OsnAnnouncement, Registration, GuidanceLog, MedalType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
-import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink, Trash2, CheckCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink, Trash2, CheckCircle, Share2 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { CurationColor, CompetitionStatus } from '../types';
 import { CompetitionForm } from '../components/features/competitions/CompetitionForm';
+import { BroadcastDialog } from '../components/features/competitions/BroadcastDialog';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { toast } from 'sonner';
@@ -84,6 +85,7 @@ export function InternalHome() {
   const [editingComp, setEditingComp] = useState<Competition | null>(null);
   const [deletingCompId, setDeletingCompId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showBroadcastDialog, setShowBroadcastDialog] = useState(false);
 
   const handleApprove = async (e: React.MouseEvent, compId: string) => {
     e.stopPropagation();
@@ -427,9 +429,17 @@ export function InternalHome() {
 
         {/* Portal Lomba */}
 <div className="mb-8 bg-white p-6 rounded-xl border shadow-sm space-y-4">
-              <div className="flex items-center text-lg font-semibold text-slate-800 mb-2">
-                <Filter className="h-5 w-5 mr-2 text-indigo-500" />
-                Filter Kompetisi
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center text-lg font-semibold text-slate-800">
+                  <Filter className="h-5 w-5 mr-2 text-indigo-500" />
+                  Filter Kompetisi
+                </div>
+                {(userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
+                  <Button variant="outline" size="sm" onClick={() => setShowBroadcastDialog(true)} className="flex items-center gap-2">
+                    <Share2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Broadcast WA</span>
+                  </Button>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="relative">
@@ -668,6 +678,12 @@ export function InternalHome() {
         onClose={() => setDeletingCompId(null)} 
         onConfirm={confirmDelete}
         isLoading={isDeleting}
+      />
+      
+      <BroadcastDialog 
+        open={showBroadcastDialog} 
+        onOpenChange={setShowBroadcastDialog} 
+        competitions={competitions} 
       />
 </div>
   );
