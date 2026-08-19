@@ -7,7 +7,7 @@ import { getStudentGuidanceLogs } from '../services/guidanceService';
 import { Competition, OsnAnnouncement, Registration, GuidanceLog, MedalType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
-import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink, Trash2, CheckCircle, Share2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Trophy, BookOpen, PenTool, Plus, Search, Filter, MapPin, Users, ExternalLink, Trash2, CheckCircle, Share2, MonitorPlay } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { CurationColor, CompetitionStatus } from '../types';
 import { CompetitionForm } from '../components/features/competitions/CompetitionForm';
 import { BroadcastDialog } from '../components/features/competitions/BroadcastDialog';
+import { FullscreenCompetitionDisplay } from '../components/features/competitions/FullscreenCompetitionDisplay';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { toast } from 'sonner';
@@ -86,6 +87,7 @@ export function InternalHome() {
   const [deletingCompId, setDeletingCompId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showBroadcastDialog, setShowBroadcastDialog] = useState(false);
+  const [showFullscreenDisplay, setShowFullscreenDisplay] = useState(false);
 
   const handleApprove = async (e: React.MouseEvent, compId: string) => {
     e.stopPropagation();
@@ -434,12 +436,18 @@ export function InternalHome() {
                   <Filter className="h-5 w-5 mr-2 text-indigo-500" />
                   Filter Kompetisi
                 </div>
-                {(userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
-                  <Button variant="outline" size="sm" onClick={() => setShowBroadcastDialog(true)} className="flex items-center gap-2">
-                    <Share2 className="h-4 w-4" />
-                    <span className="hidden sm:inline">Broadcast WA</span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowFullscreenDisplay(true)} className="flex items-center gap-2">
+                    <MonitorPlay className="h-4 w-4" />
+                    <span className="hidden sm:inline">Mode Presentasi</span>
                   </Button>
-                )}
+                  {(userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
+                    <Button variant="outline" size="sm" onClick={() => setShowBroadcastDialog(true)} className="flex items-center gap-2">
+                      <Share2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">Broadcast WA</span>
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="relative">
@@ -685,6 +693,13 @@ export function InternalHome() {
         onOpenChange={setShowBroadcastDialog} 
         competitions={competitions} 
       />
+
+      {showFullscreenDisplay && (
+        <FullscreenCompetitionDisplay 
+          competitions={competitions} 
+          onClose={() => setShowFullscreenDisplay(false)} 
+        />
+      )}
 </div>
   );
 }

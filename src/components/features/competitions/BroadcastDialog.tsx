@@ -31,7 +31,7 @@ export function BroadcastDialog({ open, onOpenChange, competitions }: BroadcastD
   }, [competitions]);
 
   const broadcastText = useMemo(() => {
-    let text = '*📢 INFO LOMBA TERKINI YANG MASIH DIBUKA*\n\n';
+    let text = 'Semesta Olympiad Squad Information\n*📢 INFO LOMBA TERKINI YANG MASIH DIBUKA*\n\n';
     
     if (activeCompetitions.length === 0) {
       return text + 'Belum ada lomba yang tersedia saat ini.';
@@ -57,7 +57,12 @@ export function BroadcastDialog({ open, onOpenChange, competitions }: BroadcastD
       text += `- ${comp.title}${locationInfo} (Deadline: ${formattedDate}) ${daysText}\n`;
     });
     
-    text += '\nSegera daftarkan dirimu melalui Portal Lomba SOS Semesta!';
+    text += '\nSegera ajukan perizinan melalui Portal SOS Semesta!\n\n';
+    text += 'Website: https://sos.olympiad.my.id\n';
+    text += 'Contact Person\n';
+    text += 'SMA Putra: Mr Ghozi (+6285729660235 - mghozianka@semesta.sch.id)\n';
+    text += 'SMA Putri: Miss Frehni (+6281336869545 - riswi@semesta.sch.id)\n';
+    text += 'SMP: Miss Fitroh (+6281391715837 - scfitroh@semesta.sch.id)';
     return text;
   }, [activeCompetitions]);
 
@@ -164,7 +169,7 @@ export function BroadcastDialog({ open, onOpenChange, competitions }: BroadcastD
                      )}
                    </div>
                    <div className="bg-slate-50 p-4 text-center text-xs md:text-sm font-semibold text-slate-500 border-t">
-                     Segera daftarkan dirimu melalui Portal Lomba SOS Semesta
+                     Segera ajukan perizinan melalui Portal SOS Semesta!
                    </div>
                  </div>
                </div>
@@ -233,7 +238,7 @@ export function BroadcastDialog({ open, onOpenChange, competitions }: BroadcastD
               )}
             </div>
             <div className="bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500 border-t">
-              Segera daftarkan dirimu melalui Portal Lomba SOS Semesta
+              Segera ajukan perizinan melalui Portal SOS Semesta!
             </div>
           </div>
         </div>

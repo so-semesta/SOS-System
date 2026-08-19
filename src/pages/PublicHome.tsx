@@ -5,11 +5,12 @@ import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { getAllCompetitions, getAllRegistrations } from '../services/competitionService';
 import { Competition, Registration, CurationColor } from '../types';
-import { LogIn, MapPin, Calendar as CalendarIcon, Users, ExternalLink, Trophy, Search, Filter } from 'lucide-react';
+import { LogIn, MapPin, Calendar as CalendarIcon, Users, ExternalLink, Trophy, Search, Filter, MonitorPlay } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { FullscreenCompetitionDisplay } from '../components/features/competitions/FullscreenCompetitionDisplay';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { LOGO_BASE64 } from '../lib/constants';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
@@ -70,6 +71,7 @@ export function PublicHome() {
   const [registrationsMap, setRegistrationsMap] = useState<Record<string, Registration[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedComp, setSelectedComp] = useState<Competition | null>(null);
+  const [showFullscreenDisplay, setShowFullscreenDisplay] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [currentView, setCurrentView] = useState<any>('month');
 
@@ -245,9 +247,15 @@ export function PublicHome() {
         ) : (
           <div>
             <div className="mb-8 bg-white p-6 rounded-xl border shadow-sm space-y-4">
-              <div className="flex items-center text-lg font-semibold text-slate-800 mb-2">
-                <Filter className="h-5 w-5 mr-2 text-indigo-500" />
-                Filter Kompetisi
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center text-lg font-semibold text-slate-800">
+                  <Filter className="h-5 w-5 mr-2 text-indigo-500" />
+                  Filter Kompetisi
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowFullscreenDisplay(true)} className="flex items-center gap-2">
+                  <MonitorPlay className="h-4 w-4" />
+                  <span className="hidden sm:inline">Mode Presentasi</span>
+                </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="relative">
@@ -447,6 +455,13 @@ export function PublicHome() {
           </DialogContent>
         )}
       </Dialog>
+
+      {showFullscreenDisplay && (
+        <FullscreenCompetitionDisplay 
+          competitions={competitions} 
+          onClose={() => setShowFullscreenDisplay(false)} 
+        />
+      )}
     </div>
   );
 }
