@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Checkbox } from '../../components/ui/checkbox';
-import { toast } from 'sonner';
+import { toast } from "sonner";
+import { safeFormatDate } from "../../lib/utils";
 import { Search, MapPin, Calendar, ExternalLink, Plus, Printer } from 'lucide-react';
 
 const formatCuration = (curation: CurationColor) => {
@@ -126,6 +127,19 @@ export function Competitions() {
     return registrations.find(r => r.competitionId === compId);
   };
 
+  const updateStudentRoundNotes = async (index: number, notes: string) => {
+    if (!selectedMyReg || !selectedMyReg.roundsChecklist) return;
+    const newChecklist = [...selectedMyReg.roundsChecklist];
+    newChecklist[index].notes = notes;
+    setSelectedMyReg({ ...selectedMyReg, roundsChecklist: newChecklist });
+    try {
+      await updateRegistration(selectedMyReg.id, { roundsChecklist: newChecklist });
+      setRegistrations(registrations.map(r => r.id === selectedMyReg.id ? { ...r, roundsChecklist: newChecklist } : r));
+    } catch (e) {
+      toast.error('Gagal menyimpan catatan');
+    }
+  };
+
   const handleApply = async (force: boolean = false, isRegisteredDirectly: boolean = false) => {
     if (!currentUser || !selectedComp) return;
     
@@ -149,6 +163,7 @@ export function Competitions() {
         competitionId: selectedComp.id,
         competitionTitle: selectedComp.title,
         status: RegistrationStatus.PENDING,
+        isRegisteredDirectly,
         createdAt: Date.now(),
         updatedAt: Date.now()
       });
@@ -233,7 +248,7 @@ export function Competitions() {
                     <td>${comp?.field ? (Array.isArray(comp.field) ? comp.field.join(', ') : comp.field) : '-'}</td>
                     <td>${comp?.curationColor || '-'}</td>
                     <td>${resultText}</td>
-                    <td>${new Date(reg.createdAt).toLocaleDateString('id-ID')}</td>
+                    <td>${safeFormatDate(reg.createdAt)}</td>
                   </tr>
                 `;
               }).join('')}
@@ -371,7 +386,7 @@ export function Competitions() {
                     <CardContent className="pb-3 text-sm flex-none">
                       <div className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold mb-3 ${new Date(comp.registrationDeadline).getTime() < new Date().setHours(0,0,0,0) ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
                         <Calendar className="mr-1.5 h-3 w-3" />
-                        Batas Daftar: {new Date(comp.registrationDeadline).toLocaleDateString('id-ID')}
+                        Batas Daftar: {safeFormatDate(comp.registrationDeadline)}
                       </div>
                       <div className="flex items-center text-muted-foreground mb-3">
                         <MapPin className="mr-2 h-4 w-4" />
@@ -444,7 +459,7 @@ export function Competitions() {
                       </div>
                       <CardTitle className="text-lg line-clamp-2">{reg.competitionTitle}</CardTitle>
                       <CardDescription>
-                        Diajukan pada: {new Date(reg.createdAt).toLocaleDateString('id-ID')}
+                        Diajukan pada: {safeFormatDate(reg.createdAt)}
                       </CardDescription>
                     </CardHeader>
                     {comp && (
@@ -493,7 +508,7 @@ export function Competitions() {
                 </div>
                 <div>
                   <p className="font-semibold text-muted-foreground">Batas Pendaftaran</p>
-                  <p>{new Date(selectedComp.registrationDeadline).toLocaleDateString('id-ID')}</p>
+                  <p>{safeFormatDate(selectedComp.registrationDeadline)}</p>
                 </div>
                 <div>
                   <p className="font-semibold text-muted-foreground">Biaya Pendaftaran</p>
@@ -515,7 +530,7 @@ export function Competitions() {
                   {selectedComp.rounds.length > 0 ? selectedComp.rounds.slice().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((r, i) => (
                     <div key={i} className="flex justify-between border-b last:border-0 pb-1 last:pb-0">
                       <span>{r.name}</span>
-                      <span className="font-medium">{new Date(r.date).toLocaleDateString('id-ID')}</span>
+                      <span className="font-medium">{safeFormatDate(r.date)}</span>
                     </div>
                   )) : (
                     <p className="text-muted-foreground">Belum ada jadwal yang ditentukan.</p>
@@ -585,39 +600,53 @@ export function Competitions() {
               {selectedMyReg.status === RegistrationStatus.APPROVED && (
                 <div>
                   <p className="font-semibold text-muted-foreground text-sm mb-2 mt-4">Checklist Progres Lomba</p>
-                  <div className="flex items-center justify-between p-3 border rounded-md bg-muted/10 mb-4">
-                    <span className="font-medium text-sm">Sudah Mendaftar ke Penyelenggara?</span>
-                    <Switch
-                      checked={!!selectedMyReg.isRegisteredDirectly}
-                      onCheckedChange={async (checked) => {
-                        try {
-                          await updateRegistrationStatus(selectedMyReg.id, selectedMyReg.status, selectedMyReg.roundsChecklist, checked);
-                          setSelectedMyReg({ ...selectedMyReg, isRegisteredDirectly: checked });
-                          setRegistrations(registrations.map(r => r.id === selectedMyReg.id ? { ...r, isRegisteredDirectly: checked } : r));
-                          toast.success('Status pendaftaran berhasil diperbarui');
-                        } catch (e) {
-                          toast.error('Gagal memperbarui status');
-                        }
-                      }}
-                    />
+                  <div className="flex flex-col gap-1 p-3 border rounded-md bg-muted/10 mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">Sudah Mendaftar ke Penyelenggara?</span>
+                      <Switch
+                        checked={!!selectedMyReg.isRegisteredDirectly}
+                        className="data-[state=checked]:bg-green-600"
+                        onCheckedChange={async (checked) => {
+                          try {
+                            await updateRegistrationStatus(selectedMyReg.id, selectedMyReg.status, selectedMyReg.roundsChecklist, checked);
+                            setSelectedMyReg({ ...selectedMyReg, isRegisteredDirectly: checked });
+                            setRegistrations(registrations.map(r => r.id === selectedMyReg.id ? { ...r, isRegisteredDirectly: checked } : r));
+                            toast.success('Status pendaftaran berhasil diperbarui');
+                          } catch (e) {
+                            toast.error('Gagal memperbarui status');
+                          }
+                        }}
+                      />
+                    </div>
+                    {!selectedMyReg.isRegisteredDirectly && (
+                      <span className="text-xs text-muted-foreground italic">Pendaftaran dari Sekolah</span>
+                    )}
                   </div>
                   {selectedMyReg.roundsChecklist && selectedMyReg.roundsChecklist.length > 0 ? (
                     <div className="space-y-3">
-                      {selectedMyReg.roundsChecklist.map((rc, idx) => (
+                      {selectedMyReg.roundsChecklist.map((rc, idx) => {
+                        const comp = competitions.find(c => c.id === selectedMyReg.competitionId);
+                        const roundDate = rc.date || comp?.rounds?.find(r => r.name === rc.roundName)?.date;
+                        return (
                         <div key={idx} className="flex flex-col gap-2 p-3 border rounded-md bg-muted/20">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">{rc.roundName}</span>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="font-medium block">{rc.roundName}</span>
+                              {roundDate && !isNaN(new Date(roundDate).getTime()) && <span className="text-xs text-muted-foreground">{safeFormatDate(roundDate, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+                            </div>
                             <Badge variant={rc.passed ? 'default' : 'secondary'}>
                               {rc.passed ? 'Lolos' : 'Belum Lolos'}
                             </Badge>
                           </div>
-                          {rc.notes && (
-                            <p className="text-sm text-muted-foreground bg-white/50 p-2 rounded border mt-1">
-                              <strong>Catatan:</strong> {rc.notes}
-                            </p>
-                          )}
+                          <Input 
+                            placeholder="Catatan siswa (opsional, misal: butuh webcam...)" 
+                            value={rc.notes || ''}
+                            onChange={(e) => updateStudentRoundNotes(idx, e.target.value)}
+                            className="h-8 text-sm mt-1 bg-white/50"
+                          />
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">Checklist babak belum diatur oleh manajemen.</p>
@@ -702,7 +731,7 @@ export function Competitions() {
                 setShowRegistrationCheck(false);
                 handleApply(false, true); 
                }} className="w-full h-auto py-3 whitespace-normal text-left bg-green-600 hover:bg-green-700">
-                Ya, saya akan/sudah melakukan pendaftaran mandiri
+                Saya melakukan pendaftaran secara mandiri
               </Button>
               {isLateRegistration ? (
                  <Button variant="outline" onClick={() => setShowRegistrationCheck(false)} className="w-full h-auto py-3 whitespace-normal text-left text-red-600 border-red-200 hover:bg-red-50">
@@ -713,7 +742,7 @@ export function Competitions() {
                    setShowRegistrationCheck(false);
                    handleApply(false, false);
                  }} className="w-full h-auto py-3 whitespace-normal text-left text-blue-600 border-blue-200 hover:bg-blue-50">
-                   Belum, saya mau minta bantuan sekolah untuk mendaftarkan
+                   Saya ingin minta bantuan sekolah
                  </Button>
               )}
             </div>

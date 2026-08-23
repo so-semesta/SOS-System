@@ -131,6 +131,7 @@ export interface RoundChecklist {
   roundName: string;
   passed: boolean;
   notes: string;
+  date?: number;
 }
 
 export interface Registration {

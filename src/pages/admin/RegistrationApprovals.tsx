@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Checkbox } from '../../components/ui/checkbox';
 import { Switch } from '../../components/ui/switch';
 import { Search, CheckCircle2, XCircle, Eye, Download, UserPlus } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from "sonner";
+import { safeFormatDate } from "../../lib/utils";
 
 export function RegistrationApprovals() {
   const { userRole } = useAuth();
@@ -122,6 +123,7 @@ export function RegistrationApprovals() {
       if (comp && comp.rounds && (!reg.roundsChecklist || reg.roundsChecklist.length === 0)) {
         const initialChecklist = comp.rounds.map(r => ({
           roundName: r.name,
+          date: r.date,
           passed: false,
           notes: ''
         }));
@@ -228,7 +230,7 @@ export function RegistrationApprovals() {
 
     const rows = filteredRegs.map(r => [
       formatField(r.id),
-      formatField(new Date(r.createdAt).toLocaleDateString('id-ID')),
+      formatField(safeFormatDate(r.createdAt)),
       formatField(r.studentName || 'Siswa Tanpa Nama'),
       formatField(r.competitionTitle),
       formatField(r.status),
@@ -312,7 +314,7 @@ export function RegistrationApprovals() {
               filteredRegs.map((reg) => (
                 <TableRow key={reg.id}>
                   <TableCell className="whitespace-nowrap">
-                    {new Date(reg.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {safeFormatDate(reg.createdAt, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </TableCell>
                   <TableCell className="font-medium">{reg.studentName || 'Siswa Tanpa Nama'}</TableCell>
                   <TableCell>{reg.competitionTitle}</TableCell>
@@ -418,7 +420,9 @@ export function RegistrationApprovals() {
                 
                 {selectedReg.roundsChecklist && selectedReg.roundsChecklist.length > 0 && (
                   <div className="space-y-4 mb-6">
-                    {selectedReg.roundsChecklist.map((rc, idx) => (
+                    {selectedReg.roundsChecklist.map((rc, idx) => {
+                      const roundDate = rc.date || selectedCompetition?.rounds?.find(r => r.name === rc.roundName)?.date;
+                      return (
                       <div key={idx} className="flex flex-col gap-2 p-3 border rounded-md bg-card">
                         <div className="flex items-center gap-3">
                           <Checkbox 
@@ -427,9 +431,12 @@ export function RegistrationApprovals() {
                             onCheckedChange={(checked) => toggleRoundPassed(idx, checked === true)} 
                             disabled={savingChecklist}
                           />
-                          <label htmlFor={`round-${idx}`} className="font-medium flex-1 cursor-pointer">
-                            {rc.roundName}
-                          </label>
+                          <div className="flex-1">
+                            <label htmlFor={`round-${idx}`} className="font-medium cursor-pointer block">
+                              {rc.roundName}
+                            </label>
+                            {roundDate && !isNaN(new Date(roundDate).getTime()) && <span className="text-xs text-muted-foreground block">{safeFormatDate(roundDate, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+                          </div>
                           <Badge variant={rc.passed ? 'default' : 'secondary'}>
                             {rc.passed ? 'Lolos' : 'Belum Lolos'}
                           </Badge>
@@ -444,7 +451,8 @@ export function RegistrationApprovals() {
                           <Button size="sm" onClick={() => saveRoundNotes(idx)} disabled={savingChecklist} variant="secondary" className="h-8">Simpan</Button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
