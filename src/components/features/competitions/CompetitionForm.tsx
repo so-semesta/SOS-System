@@ -19,7 +19,10 @@ const PREDEFINED_FIELDS = [
   'Informatika', 'Logika'
 ];
 import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud } from 'lucide-react';
-import { useAuth } from '../../../context/AuthContext';
+import { useAuth } from "../../../context/AuthContext";
+import { emptyImagePlaceholder } from "../../../lib/assets";
+import { LOGO_BASE64 } from "../../../lib/constants";
+
 import { UserRole } from '../../../types/auth';
 
 const formSchema = z.object({
@@ -150,7 +153,7 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          base64Data,
+          base64Data: base64Data || emptyImagePlaceholder,
           mimeType: 'image/jpeg'
         })
       });

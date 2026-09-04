@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Checkbox } from '../../components/ui/checkbox';
 import { toast } from "sonner";
 import { safeFormatDate } from "../../lib/utils";
-import { Search, MapPin, Calendar, ExternalLink, Plus, Printer } from 'lucide-react';
+import { Search, MapPin, Calendar, ExternalLink, Plus, Printer, AlertTriangle } from 'lucide-react';
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
@@ -122,6 +122,46 @@ export function Competitions() {
       return b.createdAt - a.createdAt;
     }
   });
+
+  const myApprovedComps = React.useMemo(() => {
+    return registrations
+      .filter(r => r.status === RegistrationStatus.APPROVED)
+      .map(r => competitions.find(c => c.id === r.competitionId))
+      .filter((c): c is Competition => !!c && c.status === CompetitionStatus.OPEN);
+  }, [registrations, competitions]);
+
+  const { clashes } = React.useMemo(() => {
+    const issuesMap: { date: number, dateStr: string, text: string, compIds: string[] }[] = [];
+    
+    // Check for timeline overlaps (same day)
+    for (let i = 0; i < myApprovedComps.length; i++) {
+      for (let j = i + 1; j < myApprovedComps.length; j++) {
+        const c1 = myApprovedComps[i];
+        const c2 = myApprovedComps[j];
+        
+        // Check rounds
+        c1.rounds.forEach(r1 => {
+          c2.rounds.forEach(r2 => {
+            const date1 = new Date(r1.date);
+            const date2 = new Date(r2.date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (date1.toDateString() === date2.toDateString() && date1 >= today) {
+              issuesMap.push({
+                date: date1.getTime(),
+                dateStr: date1.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                text: `Lomba "${c1.title}" (${r1.name}) bertabrakan dengan Lomba "${c2.title}" (${r2.name})`,
+                compIds: [c1.id, c2.id]
+              });
+            }
+          });
+        });
+      }
+    }
+
+    issuesMap.sort((a, b) => a.date - b.date);
+    return { clashes: issuesMap };
+  }, [myApprovedComps]);
 
   const getRegistrationStatus = (compId: string) => {
     return registrations.find(r => r.competitionId === compId);
@@ -437,6 +477,30 @@ export function Competitions() {
               <Printer className="w-4 h-4 mr-2" /> Cetak Riwayat CV
             </Button>
           </div>
+          
+          {clashes.length > 0 && (
+            <Card className="border-orange-200 bg-orange-50 mb-6">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-orange-800 flex items-center text-lg">
+                  <AlertTriangle className="mr-2 h-5 w-5" />
+                  Catatan Lomba Aktif (Tabrakan Jadwal)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3 text-sm text-orange-900 mt-2">
+                  {clashes.map((issue, idx) => (
+                    <li key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <Badge variant="outline" className="bg-orange-100 border-orange-300 text-orange-800 shrink-0 text-xs px-2 py-0.5">
+                        {issue.dateStr}
+                      </Badge>
+                      <span className="font-medium">{issue.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Memuat lomba saya...</div>
           ) : registrations.length === 0 ? (
