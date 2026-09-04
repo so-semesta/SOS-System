@@ -109,9 +109,9 @@ service cloud.firestore {
 
     // Students (Extended info)
     match /students/{studentId} {
-      allow get: if isSignedIn() && isValidId(studentId) && (existing().userId == request.auth.uid || isAdmin() || isTeacher());
-      // For list queries, the rule must explicitly filter by userId for non-admins
-      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.userId == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(studentId);
+      // RELAXED FOR LEADERBOARD: All logged-in users can list students.
+      allow list: if isSignedIn();
       
       allow create: if isSignedIn() && isValidId(studentId) && 
                        isValidStudent(incoming()) && 
@@ -126,14 +126,15 @@ service cloud.firestore {
 
     // Competitions
     match /competitions/{competitionId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSignedIn() && isValidId(competitionId) && isAdmin();
     }
 
     // Registrations
     match /registrations/{registrationId} {
-      allow get: if isSignedIn() && isValidId(registrationId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
-      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(registrationId);
+      // RELAXED FOR LEADERBOARD: All logged-in users can list registrations.
+      allow list: if isSignedIn();
       
       // Students can register themselves (status PENDING). Admins can do anything.
       allow create: if isSignedIn() && isValidId(registrationId) && 
