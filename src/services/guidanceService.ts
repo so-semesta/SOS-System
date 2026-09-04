@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { GuidanceLog } from '../types';
 
@@ -18,11 +18,16 @@ export const getStudentGuidanceLogs = async (studentId: string): Promise<Guidanc
   return logs.sort((a, b) => b.date - a.date);
 };
 
-export const getAllGuidanceLogs = async (): Promise<GuidanceLog[]> => {
-  const q = query(collection(db, 'guidanceLogs'));
+export const getAllGuidanceLogs = async (limitCount?: number): Promise<GuidanceLog[]> => {
+  let q;
+  if (limitCount) {
+    q = query(collection(db, 'guidanceLogs'), orderBy('date', 'desc'), limit(limitCount));
+  } else {
+    q = query(collection(db, 'guidanceLogs'), orderBy('date', 'desc'));
+  }
   const querySnapshot = await getDocs(q);
   const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GuidanceLog);
-  return logs.sort((a, b) => b.date - a.date);
+  return logs;
 };
 
 export const getTodayGuidanceLogs = async (startOfDay: number, endOfDay: number): Promise<GuidanceLog[]> => {

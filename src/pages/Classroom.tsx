@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 import { Student, ChatMessage } from '../types';
 import { db } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs, limit } from 'firebase/firestore';
 import { sendMessage, deleteMessage } from '../services/chatService';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -54,12 +54,14 @@ export function Classroom() {
     const q = query(
       collection(db, 'chats'),
       where('roomId', '==', activeRoom),
-      orderBy('createdAt', 'asc')
+      orderBy('createdAt', 'desc'),
+      limit(150)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChatMessage);
-      setMessages(msgs);
+      // Because we fetched desc to get latest, we need to reverse them to display asc
+      setMessages(msgs.reverse());
     }, (error) => {
       console.error("Chat subscription error:", error);
       toast.error('Gagal memuat chat');

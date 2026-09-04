@@ -1,8 +1,208 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 1. Global Safety Net
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Note: To check roles, we fetch from the users collection
+    function isAdmin() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MANAGEMENT'
+      );
+    }
+    
+    function isTeacher() {
+       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'TEACHER';
+    }
+
+    // 3. Validation Helpers
+    function isValidUserProfile(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'MANAGEMENT'] &&
+             data.createdAt is number && 
+             data.updatedAt is number;
+    }
+
+    function isValidStudent(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.fullName is string && data.fullName.size() <= 256 &&
+             data.createdAt is number &&
+             data.updatedAt is number;
+    }
+
+    function isValidCompetition(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.status in ['OPEN', 'CLOSED'];
+    }
+
+    function isValidRegistration(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.competitionId is string && data.competitionId.size() <= 128 &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'];
+    }
+
+    function isValidAchievement(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.competitionId is string && data.competitionId.size() <= 128 &&
+             data.medalType in ['GOLD', 'SILVER', 'BRONZE', 'FINALS', 'PARTICIPANT'];
+    }
+
+    function isValidGuidanceLog(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.date is number &&
+             data.academicSubject is string && data.academicSubject.size() <= 256 &&
+             data.studyProgress is string && data.studyProgress.size() <= 5000 &&
+             data.mood in ['GREAT', 'GOOD', 'NEUTRAL', 'BAD', 'TERRIBLE'] &&
+             data.createdAt is number;
+    }
+
+
+    // ==========================================
+    // 4. Collection Rules
+    // ==========================================
+
+    // Users (Profiles)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin() || isTeacher());
+      allow list: if isSignedIn() && (isAdmin() || isTeacher());
+      
+      // Allow creation during sign-up. Cannot arbitrarily set admin role unless they already are (which is paradox, so only 'STUDENT' or matching token if we had custom claims, here we restrict creation to safe roles or force admin creation via functions)
+      // Since it's a client app, students create their own profiles.
+      allow create: if isSignedIn() && isValidId(userId) && isOwner(userId) && 
+                       isValidUserProfile(incoming()) && 
+                       (incoming().role == 'STUDENT' || incoming().role == 'TEACHER');
+      
+      // Updates: Admins can update anything. Users can update their own profile EXCEPT role.
+      allow update: if isSignedIn() && isValidId(userId) && isValidUserProfile(incoming()) && (
+        isAdmin() || 
+        (isOwner(userId) && incoming().role == existing().role)
+      );
+      
+      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
+    }
+
+    // Students (Extended info)
+    match /students/{studentId} {
+      allow get: if isSignedIn() && isValidId(studentId) && (existing().userId == request.auth.uid || isAdmin() || isTeacher());
+      // For list queries, the rule must explicitly filter by userId for non-admins
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.userId == request.auth.uid);
+      
+      allow create: if isSignedIn() && isValidId(studentId) && 
+                       isValidStudent(incoming()) && 
+                       (incoming().userId == request.auth.uid || isAdmin());
+                       
+      allow update: if isSignedIn() && isValidId(studentId) && 
+                       isValidStudent(incoming()) && 
+                       (isAdmin() || (existing().userId == request.auth.uid && incoming().userId == existing().userId));
+                       
+      allow delete: if isSignedIn() && isValidId(studentId) && isAdmin();
+    }
+
+    // Competitions
+    match /competitions/{competitionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(competitionId) && isAdmin();
+    }
+
+    // Registrations
+    match /registrations/{registrationId} {
+      allow get: if isSignedIn() && isValidId(registrationId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      
+      // Students can register themselves (status PENDING). Admins can do anything.
+      allow create: if isSignedIn() && isValidId(registrationId) && 
+                       isValidRegistration(incoming()) && 
+                       ((incoming().studentId == request.auth.uid && incoming().status == 'PENDING') || isAdmin());
+                       
+      // Students can't approve themselves
+      allow update: if isSignedIn() && isValidId(registrationId) && 
+                       isValidRegistration(incoming()) && 
+                       (
+                         isAdmin() || 
+                         (existing().studentId == request.auth.uid && incoming().studentId == existing().studentId && incoming().status == existing().status)
+                       );
+                       
+      allow delete: if isSignedIn() && isValidId(registrationId) && (isAdmin() || existing().studentId == request.auth.uid);
+    }
+
+    // Achievements
+    match /achievements/{achievementId} {
+      allow get: if isSignedIn() && isValidId(achievementId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      
+      allow write: if isSignedIn() && isValidId(achievementId) && isAdmin();
+    }
+
+    // OSN
+    match /osn_announcements/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(docId) && isAdmin();
+    }
+    
+    match /osn_banksoal/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(docId) && isAdmin();
+    }
+    
+    match /archived_competitions/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(docId) && isAdmin();
+    }
+    
+    match /chats/{chatId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // Guidance Logs
+    match /guidanceLogs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      
+      allow create: if isSignedIn() && isValidId(logId) && 
+                       isValidGuidanceLog(incoming()) && 
+                       incoming().studentId == request.auth.uid;
+                       
+      // Only admins/teachers can update or delete, or owner if strictly required, but generally append-only for students
+      allow update: if isSignedIn() && isValidId(logId) && 
+                       isValidGuidanceLog(incoming()) && 
+                       (isAdmin() || (existing().studentId == request.auth.uid && incoming().studentId == existing().studentId));
+                       
+      allow delete: if isSignedIn() && isValidId(logId) && (isAdmin() || existing().studentId == request.auth.uid);
+    }
+    
+    // Test collection for offline checks
+    match /test/connection {
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

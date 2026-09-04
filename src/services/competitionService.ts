@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer, writeBatch, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Competition, Registration, RegistrationStatus, CompetitionRound, RoundChecklist } from '../types';
 
@@ -95,10 +95,10 @@ export const getRegistrationCountByCompetition = async (competitionId: string): 
 };
 
 export const getAllRegistrations = async (): Promise<Registration[]> => {
-  const q = query(collection(db, 'registrations'));
+  const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'), limit(500));
   const querySnapshot = await getDocs(q);
   const registrations = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Registration);
-  return registrations.sort((a, b) => b.createdAt - a.createdAt);
+  return registrations;
 };
 
 export const updateRegistration = async (registrationId: string, data: Partial<Registration>) => {

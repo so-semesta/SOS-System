@@ -47,12 +47,14 @@ export function GuidanceMonitor() {
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('ALL');
+  const [showAllLogs, setShowAllLogs] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
 
-  const fetchData = async () => {
+  const fetchData = async (fetchAll: boolean = false) => {
     try {
-      const logsData = await getAllGuidanceLogs();
+      const logsData = await getAllGuidanceLogs(fetchAll ? undefined : 300);
       setLogs(logsData);
 
       const usersQuery = query(collection(db, 'users'), where('role', '==', 'STUDENT'));
@@ -68,12 +70,13 @@ export function GuidanceMonitor() {
       toast.error('Gagal mengambil data monitoring guidance');
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(showAllLogs);
+  }, [showAllLogs]);
 
   const triggerDelete = (id: string) => {
     if(!id) {
@@ -331,6 +334,22 @@ export function GuidanceMonitor() {
           </TableBody>
         </Table>
       </div>
+
+      <div className="flex justify-center mt-4">
+        {!showAllLogs && (
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              setIsLoadingMore(true);
+              setShowAllLogs(true);
+            }}
+            disabled={isLoadingMore || loading}
+          >
+            {isLoadingMore ? 'Memuat Semua Data...' : 'Muat Semua Riwayat'}
+          </Button>
+        )}
+      </div>
+
       <ConfirmDeleteDialog 
         isOpen={!!deletingLogId} 
         onClose={() => setDeletingLogId(null)} 
