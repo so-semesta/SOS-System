@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Competition, Registration, RegistrationStatus, CompetitionRound, RoundChecklist } from '../types';
 
@@ -14,12 +14,59 @@ export const deleteCompetition = async (id: string) => {
   await deleteDoc(doc(db, 'competitions', id));
 };
 
+export const archiveCompetition = async (id: string) => {
+  const compRef = doc(db, 'competitions', id);
+  const docSnap = await getDoc(compRef);
+  
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const archiveRef = doc(db, 'archived_competitions', id);
+    await setDoc(archiveRef, data);
+    await deleteDoc(compRef);
+  }
+};
+
+export const unarchiveCompetition = async (id: string) => {
+  const archiveRef = doc(db, 'archived_competitions', id);
+  const docSnap = await getDoc(archiveRef);
+  
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const compRef = doc(db, 'competitions', id);
+    await setDoc(compRef, data);
+    await deleteDoc(archiveRef);
+  }
+};
+
+export const getAllArchivedCompetitions = async (): Promise<Competition[]> => {
+  const q = query(collection(db, 'archived_competitions'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Competition);
+};
+
+export const getArchivedCompetitionById = async (id: string): Promise<Competition | null> => {
+  const docRef = doc(db, 'archived_competitions', id);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    return { id: docSnap.id, ...docSnap.data() } as Competition;
+  }
+  return null;
+};
+
 export const getCompetitionById = async (id: string): Promise<Competition | null> => {
   const docRef = doc(db, 'competitions', id);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
     return { id: docSnap.id, ...docSnap.data() } as Competition;
   }
+  
+  // Fallback to archive
+  const archiveRef = doc(db, 'archived_competitions', id);
+  const archiveSnap = await getDoc(archiveRef);
+  if (archiveSnap.exists()) {
+    return { id: archiveSnap.id, ...archiveSnap.data() } as Competition;
+  }
+  
   return null;
 };
 

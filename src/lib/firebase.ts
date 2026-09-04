@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -9,8 +9,28 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const storage = getStorage(app);
+
+// Conditionally initialize Firestore based on environment
+let firestoreDb;
+if (typeof window !== 'undefined') {
+  // Check if running inside an iframe (like AI Studio preview)
+  const isIframe = window.self !== window.top;
+  
+  if (isIframe) {
+    // Disable offline cache in iframe to prevent storage access errors
+    firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+  } else {
+    // Enable persistent offline cache when accessed directly (e.g. GitHub Pages / Vercel)
+    firestoreDb = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    }, firebaseConfig.firestoreDatabaseId);
+  }
+} else {
+  // Server-side / Node.js fallback
+  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+export const db = firestoreDb;
 
 // Test Connection
 async function testConnection() {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations, updateRegistrationStatus } from '../../services/competitionService';
+import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations, updateRegistrationStatus, getArchivedCompetitionById } from '../../services/competitionService';
 import { getStudentProfile } from '../../services/studentService';
 import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student } from '../../types';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
@@ -89,7 +89,20 @@ export function Competitions() {
       const approvedComps = comps.filter(c => c.isApproved !== false || c.proposedByUserId === currentUser.uid);
       const regs = await getStudentRegistrations(currentUser.uid);
       const profile = await getStudentProfile(currentUser.uid);
-      setCompetitions(approvedComps);
+      
+      // Cek apakah ada registrasi yang lombanya sudah diarsipkan (tidak ada di approvedComps)
+      const missingCompIds = regs
+        .map(r => r.competitionId)
+        .filter(id => !approvedComps.some(c => c.id === id));
+      
+      const archivedComps = await Promise.all(
+        missingCompIds.map(id => getArchivedCompetitionById(id))
+      );
+      
+      // Gabungkan lomba aktif dan yang diarsipkan (hanya yang diikuti siswa)
+      const allRelevantComps = [...approvedComps, ...archivedComps.filter((c): c is Competition => c !== null)];
+      
+      setCompetitions(allRelevantComps);
       setRegistrations(regs);
       setStudentData(profile);
     } catch (error) {

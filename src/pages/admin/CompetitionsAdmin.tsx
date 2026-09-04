@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Competition, CompetitionStatus } from '../../types';
-import { getAllCompetitions, deleteCompetition } from '../../services/competitionService';
+import { getAllCompetitions, deleteCompetition, archiveCompetition, unarchiveCompetition, getAllArchivedCompetitions } from '../../services/competitionService';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
@@ -8,8 +8,9 @@ import { Badge } from '../../components/ui/badge';
 import { toast } from 'sonner';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { Pencil, Trash2, AlertTriangle, Download } from 'lucide-react';
+import { Pencil, Trash2, AlertTriangle, Download, Archive, ArchiveRestore } from 'lucide-react';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
 
 export function CompetitionsAdmin() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -17,17 +18,44 @@ export function CompetitionsAdmin() {
   const [editingComp, setEditingComp] = useState<Competition | null>(null);
   const [deletingCompId, setDeletingCompId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [clashFilter, setClashFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
+  const [archivedCompetitions, setArchivedCompetitions] = useState<Competition[]>([]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       const data = await getAllCompetitions();
+      const archivedData = await getAllArchivedCompetitions();
       setCompetitions(data);
+      setArchivedCompetitions(archivedData);
     } catch (error) {
       toast.error('Gagal memuat daftar perlombaan');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleArchiveRow = async (id: string) => {
+    if (!window.confirm('Yakin ingin mengarsipkan lomba ini?')) return;
+    try {
+      await archiveCompetition(id);
+      toast.success('Lomba berhasil diarsipkan');
+      loadData();
+    } catch (err: any) {
+      toast.error('Gagal mengarsipkan: ' + err.message);
+    }
+  };
+
+  const handleUnarchiveRow = async (id: string) => {
+    if (!window.confirm('Yakin ingin mengembalikan lomba ini dari arsip?')) return;
+    try {
+      await unarchiveCompetition(id);
+      toast.success('Lomba berhasil dikembalikan');
+      loadData();
+    } catch (err: any) {
+      toast.error('Gagal mengembalikan: ' + err.message);
     }
   };
 
@@ -194,9 +222,18 @@ export function CompetitionsAdmin() {
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="w-4 h-4 mr-2" /> Ekspor CSV
             </Button>
+            
           </div>
         </div>
-        <div className="rounded-md border bg-card">
+        
+        <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="active">Lomba Aktif</TabsTrigger>
+            <TabsTrigger value="archived">Arsip Lomba</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="active">
+            <div className="rounded-md border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
@@ -243,6 +280,9 @@ export function CompetitionsAdmin() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button title="Arsipkan" variant="ghost" size="icon" onClick={() => handleArchiveRow(c.id)}>
+                          <Archive className="w-4 h-4 text-orange-500" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setEditingComp(c)}>
                           <Pencil className="w-4 h-4 text-blue-500" />
                         </Button>
@@ -257,6 +297,65 @@ export function CompetitionsAdmin() {
             </TableBody>
           </Table>
         </div>
+          </TabsContent>
+          
+          <TabsContent value="archived">
+            <div className="rounded-md border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama Lomba</TableHead>
+                    <TableHead>Bidang</TableHead>
+                    <TableHead>Tingkat</TableHead>
+                    <TableHead>Deadline Pendaftaran</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Approval</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center h-24">Memuat...</TableCell></TableRow>
+                  ) : archivedCompetitions.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center h-24">Belum ada lomba diarsipkan</TableCell></TableRow>
+                  ) : (
+                    archivedCompetitions.map((c) => (
+                      <TableRow key={c.id}>
+                        <TableCell className="font-medium">{c.title}</TableCell>
+                        <TableCell>{Array.isArray(c.field) ? c.field.join(', ') : c.field}</TableCell>
+                        <TableCell>{c.type}</TableCell>
+                        <TableCell>{new Date(c.registrationDeadline).toLocaleDateString('id-ID')}</TableCell>
+                        <TableCell>
+                          <Badge variant={c.status === CompetitionStatus.OPEN ? 'default' : 'secondary'}>
+                            {c.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {c.isApproved !== false ? (
+                            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">Approved</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50">Pending</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button title="Kembalikan Lomba" variant="ghost" size="icon" onClick={() => handleUnarchiveRow(c.id)}>
+                              <ArchiveRestore className="w-4 h-4 text-green-600" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => triggerDelete(c.id)}>
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
+
       </div>
 
       <Dialog open={!!editingComp} onOpenChange={(open) => !open && setEditingComp(null)}>
