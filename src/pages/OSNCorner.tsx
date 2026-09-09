@@ -6,7 +6,7 @@ import { Button } from '../components/ui/button';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 import { OsnAnnouncement, OsnBankSoal } from '../types';
-import { getOsnAnnouncement, updateOsnAnnouncement, getOsnBankSoal, addOsnBankSoal, updateOsnBankSoal, deleteOsnBankSoal } from '../services/osnService';
+import { getOsnAnnouncements, addOsnAnnouncement, updateOsnAnnouncement, deleteOsnAnnouncement, getOsnBankSoal, addOsnBankSoal, updateOsnBankSoal, deleteOsnBankSoal } from '../services/osnService';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -32,13 +32,15 @@ export function OSN() {
   const { userRole } = useAuth();
   const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
 
-  const [announcement, setAnnouncement] = useState<OsnAnnouncement | null>(null);
+  const [announcements, setAnnouncements] = useState<OsnAnnouncement[]>([]);
   const [bankSoal, setBankSoal] = useState<OsnBankSoal[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals state
   const [isEditInfoOpen, setIsEditInfoOpen] = useState(false);
-  const [infoForm, setInfoForm] = useState({ title: '', content: '' });
+  const [infoForm, setInfoForm] = useState<Partial<OsnAnnouncement>>({ title: '', content: '' });
+  const [editingInfoId, setEditingInfoId] = useState<string | null>(null);
+  const [deletingInfoId, setDeletingInfoId] = useState<string | null>(null);
 
   const [isSoalModalOpen, setIsSoalModalOpen] = useState(false);
   const [soalForm, setSoalForm] = useState<Partial<OsnBankSoal>>({ title: '', subject: '', fileUrl: '' });
@@ -54,8 +56,8 @@ export function OSN() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const ann = await getOsnAnnouncement();
-      if (ann) setAnnouncement(ann);
+      const anns = await getOsnAnnouncements();
+      setAnnouncements(anns);
       
       const soal = await getOsnBankSoal();
       setBankSoal(soal);
@@ -68,22 +70,48 @@ export function OSN() {
   };
 
   // --- Announcement Handlers ---
-  const handleOpenEditInfo = () => {
-    setInfoForm({
-      title: announcement?.title || 'Informasi Silabus',
-      content: announcement?.content || ''
-    });
+  const handleOpenAddInfo = () => {
+    setEditingInfoId(null);
+    setInfoForm({ title: '', content: '' });
+    setIsEditInfoOpen(true);
+  };
+  
+  const handleOpenEditInfo = (ann: OsnAnnouncement) => {
+    setEditingInfoId(ann.id!);
+    setInfoForm({ title: ann.title, content: ann.content });
     setIsEditInfoOpen(true);
   };
 
   const handleSaveInfo = async () => {
     try {
-      await updateOsnAnnouncement(infoForm);
-      setAnnouncement({ ...announcement, ...infoForm } as OsnAnnouncement);
+      if (editingInfoId) {
+        await updateOsnAnnouncement(editingInfoId, infoForm);
+        setAnnouncements(prev => prev.map(a => a.id === editingInfoId ? { ...a, ...infoForm } as OsnAnnouncement : a));
+        toast.success('Informasi berhasil diperbarui');
+      } else {
+        await addOsnAnnouncement(infoForm as Omit<OsnAnnouncement, 'id'>);
+        const anns = await getOsnAnnouncements();
+        setAnnouncements(anns);
+        toast.success('Informasi berhasil ditambahkan');
+      }
       setIsEditInfoOpen(false);
-      toast.success('Informasi berhasil diperbarui');
     } catch (error) {
-      toast.error('Gagal memperbarui informasi');
+      toast.error('Gagal menyimpan informasi');
+    }
+  };
+  
+  const confirmDeleteInfo = async () => {
+    if (!deletingInfoId) return;
+    setIsDeleting(true);
+    try {
+      await deleteOsnAnnouncement(deletingInfoId);
+      setAnnouncements(prev => prev.filter(a => a.id !== deletingInfoId));
+      toast.success('Informasi berhasil dihapus');
+    } catch (error) {
+      toast.error('Gagal menghapus informasi');
+    } finally {
+      setIsDeleting(false);
+      setDeletingInfoId(null);
     }
   };
 
@@ -171,26 +199,51 @@ export function OSN() {
         </TabsList>
 
         <TabsContent value="silabus" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center mb-4">
               <div>
-                <CardTitle>{announcement?.title || 'Informasi Silabus'}</CardTitle>
-                <CardDescription>Informasi penting dan panduan silabus OSN.</CardDescription>
+                <h2 className="text-xl font-semibold">Informasi Silabus</h2>
+                <p className="text-muted-foreground text-sm">Informasi penting dan panduan silabus OSN.</p>
               </div>
               {isManagement && (
-                <Button variant="outline" size="sm" onClick={handleOpenEditInfo}>
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Edit Informasi
+                <Button onClick={handleOpenAddInfo} size="sm">
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Informasi
                 </Button>
               )}
-            </CardHeader>
-            <CardContent>
-              <div 
-                className="prose prose-sm max-w-none prose-slate"
-                dangerouslySetInnerHTML={{ __html: announcement?.content ? DOMPurify.sanitize(announcement.content) : 'Belum ada informasi yang ditambahkan.' }}
-              />
-            </CardContent>
-          </Card>
+            </div>
+            
+            {announcements.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Belum ada informasi yang ditambahkan.
+                </CardContent>
+              </Card>
+            ) : (
+              announcements.map((ann) => (
+                <Card key={ann.id}>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-lg">{ann.title || 'Informasi'}</CardTitle>
+                    {isManagement && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleOpenEditInfo(ann)}>
+                          <Pencil className="w-4 h-4 mr-2" /> Edit
+                        </Button>
+                        <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setDeletingInfoId(ann.id!)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <div 
+                      className="prose prose-sm max-w-none prose-slate mt-2"
+                      dangerouslySetInnerHTML={{ __html: ann.content ? DOMPurify.sanitize(ann.content) : '' }}
+                    />
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="soal" className="space-y-4">
@@ -255,12 +308,12 @@ export function OSN() {
       <Dialog open={isEditInfoOpen} onOpenChange={setIsEditInfoOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Edit Informasi OSN</DialogTitle>
+            <DialogTitle>{editingInfoId ? 'Edit Informasi OSN' : 'Tambah Informasi OSN'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Judul Informasi</Label>
-              <Input value={infoForm.title} onChange={e => setInfoForm({...infoForm, title: e.target.value})} />
+              <Input value={infoForm.title || ''} onChange={e => setInfoForm({...infoForm, title: e.target.value})} />
             </div>
             <div className="space-y-2">
               <Label>Konten / Pengumuman / Silabus</Label>
@@ -268,7 +321,7 @@ export function OSN() {
                 <ReactQuill 
                   theme="snow"
                   modules={quillModules}
-                  value={infoForm.content} 
+                  value={infoForm.content || ''} 
                   onChange={content => setInfoForm({...infoForm, content})} 
                   className="h-[350px]"
                 />
@@ -327,6 +380,13 @@ export function OSN() {
         isOpen={!!deletingSoalId}
         onClose={() => setDeletingSoalId(null)}
         onConfirm={confirmDeleteSoal}
+        isLoading={isDeleting}
+      />
+    
+      <ConfirmDeleteDialog
+        isOpen={!!deletingInfoId}
+        onClose={() => setDeletingInfoId(null)}
+        onConfirm={confirmDeleteInfo}
         isLoading={isDeleting}
       />
     </div>

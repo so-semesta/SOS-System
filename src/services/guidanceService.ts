@@ -13,7 +13,7 @@ export const getStudentGuidanceLogs = async (studentId: string): Promise<Guidanc
     // Removed orderBy('date', 'desc') to avoid requiring index for simple list right now, or we can sort on client side
   );
   const querySnapshot = await getDocs(q);
-  const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GuidanceLog);
+  const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Record<string, any>) }) as GuidanceLog);
   // Sort descending by date
   return logs.sort((a, b) => b.date - a.date);
 };
@@ -26,7 +26,7 @@ export const getAllGuidanceLogs = async (limitCount?: number): Promise<GuidanceL
     q = query(collection(db, 'guidanceLogs'), orderBy('date', 'desc'));
   }
   const querySnapshot = await getDocs(q);
-  const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GuidanceLog);
+  const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Record<string, any>) }) as GuidanceLog);
   return logs;
 };
 
@@ -37,5 +37,5 @@ export const getTodayGuidanceLogs = async (startOfDay: number, endOfDay: number)
     where('date', '<=', endOfDay)
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GuidanceLog));
+  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Record<string, any>) }) as GuidanceLog);
 };

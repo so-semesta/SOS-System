@@ -139,7 +139,7 @@ service cloud.firestore {
       // Students can register themselves (status PENDING). Admins can do anything.
       allow create: if isSignedIn() && isValidId(registrationId) && 
                        isValidRegistration(incoming()) && 
-                       ((incoming().studentId == request.auth.uid && incoming().status == 'PENDING') || isAdmin());
+                       (isAdmin() || (incoming().studentId == request.auth.uid && incoming().status == 'PENDING'));
                        
       // Students can't approve themselves
       allow update: if isSignedIn() && isValidId(registrationId) && 

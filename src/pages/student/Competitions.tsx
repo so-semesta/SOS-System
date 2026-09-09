@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Checkbox } from '../../components/ui/checkbox';
 import { toast } from "sonner";
 import { safeFormatDate } from "../../lib/utils";
-import { Search, MapPin, Calendar, ExternalLink, Plus, Printer, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle } from 'lucide-react';
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
@@ -56,12 +56,79 @@ export function Competitions() {
   const [selectedMyReg, setSelectedMyReg] = useState<Registration | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
+  const [waDialogOpen, setWaDialogOpen] = useState(false);
+  const [waDialogData, setWaDialogData] = useState<{ roundName: string, roundDate: string | number, compTitle: string } | null>(null);
+  const [waCoordinator, setWaCoordinator] = useState<'Putra' | 'Putri'>('Putra');
+  const [waNeeds, setWaNeeds] = useState<Record<string, boolean>>({
+    'Ruangan Lomba': false,
+    'Webcam': false,
+    'Tripod': false,
+    'Lainnya': false,
+  });
+  const [waOtherNeed, setWaOtherNeed] = useState('');
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 11) return 'pagi';
     if (hour < 15) return 'siang';
     if (hour < 18) return 'sore';
     return 'malam';
+  };
+
+  const handleOpenWaDialog = (roundName: string, roundDate: string | number, compTitle: string) => {
+    setWaDialogData({ roundName, roundDate, compTitle });
+    setWaDialogOpen(true);
+    setWaNeeds({
+      'Ruangan Lomba': false,
+      'Webcam': false,
+      'Tripod': false,
+      'Lainnya': false,
+    });
+    setWaOtherNeed('');
+  };
+
+  const handleSendWaNeeds = () => {
+    if (!waDialogData) return;
+    
+    const phone = waCoordinator === 'Putra' ? '6285729660235' : '6281336869545';
+    const title = waCoordinator === 'Putra' ? 'Mr' : 'Miss';
+    const greeting = getGreeting();
+    
+    let introduction = "";
+    if (studentData) {
+      const fieldOrGrade = studentData.osnField || studentData.grade || '';
+      introduction = `\nSaya ${studentData.fullName || userProfile?.name || ''}${fieldOrGrade ? ` dari bidang/kelas ${fieldOrGrade}` : ''}`;
+    } else if (userProfile?.name) {
+      introduction = `\nSaya ${userProfile.name}`;
+    }
+
+    const dateStr = waDialogData.roundDate && !isNaN(new Date(waDialogData.roundDate).getTime()) 
+      ? safeFormatDate(waDialogData.roundDate, { day: 'numeric', month: 'long', year: 'numeric' })
+      : waDialogData.roundDate;
+
+    let message = `Halo ${title}, ${greeting}.${introduction} ingin mengonfirmasi bahwa pada tanggal ${dateStr} akan ada pelaksanaan ${waDialogData.roundName} untuk lomba ${waDialogData.compTitle}.\n\nUntuk kelancaran lomba, saya membutuhkan:`;
+    
+    let hasNeeds = false;
+    Object.entries(waNeeds).forEach(([need, isChecked]) => {
+      if (isChecked) {
+        message += `\n- ${need}`;
+        hasNeeds = true;
+      }
+    });
+    
+    if (waOtherNeed.trim()) {
+      message += `\n- ${waOtherNeed.trim()}`;
+      hasNeeds = true;
+    }
+    
+    if (!hasNeeds) {
+      message += `\n- (Tidak ada kebutuhan alat/ruangan khusus)`;
+    }
+    
+    message += `\n\nMohon bantuannya ${title}. Terima kasih!`;
+    
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    setWaDialogOpen(false);
   };
 
   const handleContactCoordinator = (e: React.MouseEvent, gender: 'Putra' | 'Putri', compName: string) => {
@@ -210,7 +277,7 @@ export function Competitions() {
 
       // No conflict or forced, proceed
       const newRegId = `reg_${Date.now()}`;
-      await applyForCompetition(newRegId, {
+      const newRegistration = {
         studentId: currentUser.uid,
         studentName: userProfile?.name || 'Siswa',
         competitionId: selectedComp.id,
@@ -219,7 +286,9 @@ export function Competitions() {
         isRegisteredDirectly,
         createdAt: Date.now(),
         updatedAt: Date.now()
-      });
+      };
+      console.log('Sending payload:', newRegId, newRegistration);
+      await applyForCompetition(newRegId, newRegistration as any);
 
       toast.success('Pengajuan perizinan berhasil dikirim!');
       setSelectedComp(null);
@@ -711,9 +780,20 @@ export function Competitions() {
                               <span className="font-medium block">{rc.roundName}</span>
                               {roundDate && !isNaN(new Date(roundDate).getTime()) && <span className="text-xs text-muted-foreground">{safeFormatDate(roundDate, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
                             </div>
-                            <Badge variant={rc.passed ? 'default' : 'secondary'}>
-                              {rc.passed ? 'Lolos' : 'Belum Lolos'}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-7 w-7 p-0 rounded-full border-green-200 bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700 hover:border-green-300" 
+                                title="Chat Koordinator"
+                                onClick={(e) => { e.stopPropagation(); handleOpenWaDialog(rc.roundName, roundDate || '', selectedMyReg.competitionTitle); }}
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </Button>
+                              <Badge variant={rc.passed ? 'default' : 'secondary'}>
+                                {rc.passed ? 'Lolos' : 'Belum Lolos'}
+                              </Badge>
+                            </div>
                           </div>
                           <Input 
                             placeholder="Catatan siswa (opsional, misal: butuh webcam...)" 
@@ -824,6 +904,78 @@ export function Competitions() {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* WA Dialog */}
+      <Dialog open={waDialogOpen} onOpenChange={setWaDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Chat Koordinator Lomba</DialogTitle>
+            <DialogDescription>
+              Hubungi koordinator untuk konfirmasi kebutuhan lomba Anda.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none">Pilih Koordinator</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="koordinator" 
+                    value="Putra" 
+                    checked={waCoordinator === 'Putra'} 
+                    onChange={() => setWaCoordinator('Putra')}
+                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+                  />
+                  <span className="text-sm">Putra (Mr)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="koordinator" 
+                    value="Putri" 
+                    checked={waCoordinator === 'Putri'} 
+                    onChange={() => setWaCoordinator('Putri')}
+                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+                  />
+                  <span className="text-sm">Putri (Miss)</span>
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none">Kebutuhan Lomba</label>
+              <p className="text-xs text-muted-foreground mb-2">Pilih fasilitas yang Anda butuhkan (bisa lebih dari satu).</p>
+              <div className="flex flex-col gap-2">
+                {Object.keys(waNeeds).map((need) => (
+                  <label key={need} className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={waNeeds[need]} 
+                      onChange={(e) => setWaNeeds({...waNeeds, [need]: e.target.checked})}
+                      className="h-4 w-4 rounded text-green-600 focus:ring-green-500 border-gray-300"
+                    />
+                    <span className="text-sm">{need}</span>
+                  </label>
+                ))}
+              </div>
+              {waNeeds['Lainnya'] && (
+                <Input 
+                  placeholder="Sebutkan kebutuhan lainnya..." 
+                  value={waOtherNeed}
+                  onChange={(e) => setWaOtherNeed(e.target.value)}
+                  className="mt-2 text-sm"
+                />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWaDialogOpen(false)}>Batal</Button>
+            <Button onClick={handleSendWaNeeds} className="bg-[#25D366] hover:bg-[#1DA851] text-white gap-2">
+              <MessageCircle className="h-4 w-4" /> Kirim WhatsApp
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

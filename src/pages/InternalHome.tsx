@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { getAllCompetitions, getStudentRegistrations, updateCompetition, deleteCompetition } from '../services/competitionService';
-import { getOsnAnnouncement } from '../services/osnService';
+import { getOsnAnnouncements } from '../services/osnService';
 import { getStudentGuidanceLogs } from '../services/guidanceService';
 import { Competition, OsnAnnouncement, Registration, GuidanceLog, MedalType } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -76,7 +76,7 @@ export function InternalHome() {
   const { userRole, currentUser } = useAuth();
   const navigate = useNavigate();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [announcement, setAnnouncement] = useState<OsnAnnouncement | null>(null);
+  const [announcements, setAnnouncements] = useState<OsnAnnouncement[]>([]);
   
   // Student stats state
   const [myRegistrations, setMyRegistrations] = useState<Registration[]>([]);
@@ -127,7 +127,7 @@ export function InternalHome() {
     const fetchData = async () => {
       try {
         const compsPromise = getAllCompetitions();
-        const annPromise = getOsnAnnouncement();
+        const annPromise = getOsnAnnouncements();
         let regsPromise: Promise<Registration[]> = Promise.resolve([]);
         let guidancePromise: Promise<GuidanceLog[]> = Promise.resolve([]);
 
@@ -149,7 +149,7 @@ export function InternalHome() {
         }
         
         setCompetitions(filteredComps);
-        setAnnouncement(ann);
+        setAnnouncements(ann);
 
         if (userRole === UserRole.STUDENT && currentUser) {
           setMyRegistrations(regs);
@@ -368,14 +368,18 @@ export function InternalHome() {
                <div className="flex justify-center p-8">
                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
                </div>
-            ) : announcement ? (
-              <div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100">
-                <h3 className="font-bold text-xl text-indigo-900 mb-4">{announcement.title || 'Informasi Silabus'}</h3>
-                <div 
-                  className="prose prose-sm max-w-none text-slate-700 prose-headings:text-indigo-900 prose-a:text-indigo-600"
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(announcement.content) }}
-                />
-              </div>
+            ) : announcements.length > 0 ? (
+              <>
+              {announcements.map((ann, idx) => (
+                <div key={ann.id || idx} className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100 mb-4 last:mb-0">
+                  <h3 className="font-bold text-xl text-indigo-900 mb-4">{ann.title || 'Informasi Silabus'}</h3>
+                  <div 
+                    className="prose prose-sm max-w-none text-slate-700 prose-headings:text-indigo-900 prose-a:text-indigo-600"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(ann.content) }}
+                  />
+                </div>
+              ))}
+              </>
             ) : (
               <div className="text-center p-8 text-muted-foreground border rounded-lg bg-slate-50">
                 Belum ada informasi pelatihan saat ini.
@@ -554,35 +558,43 @@ export function InternalHome() {
                         </div>
                       </CardContent>
                       <CardFooter className={`pt-4 border-t flex flex-col items-stretch gap-3 ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
-                        {isManager && (
-                          <div className="flex gap-2 w-full">
-                            {isUnapproved && (
-                              <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={(e) => handleApprove(e, comp.id)}>
-                                <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                        {isManager ? (
+                          <>
+                            <div className="flex gap-2 w-full">
+                              {isUnapproved && (
+                                <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={(e) => handleApprove(e, comp.id)}>
+                                  <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingComp(comp); }}>
+                                <PenTool className="w-4 h-4 mr-1" /> Edit
                               </Button>
-                            )}
-                            <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingComp(comp); }}>
-                              <PenTool className="w-4 h-4 mr-1" /> Edit
+                              <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); setDeletingCompId(comp.id); }}>
+                                <Trash2 className="w-4 h-4 mr-1" /> Hapus
+                              </Button>
+                            </div>
+                            <Button variant="outline" className="w-full" onClick={(e) => { e.stopPropagation(); navigate('/admin/registrations'); }}>
+                              <Users className="w-4 h-4 mr-2" /> Pendaftar Lomba
                             </Button>
-                            <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); setDeletingCompId(comp.id); }}>
-                              <Trash2 className="w-4 h-4 mr-1" /> Hapus
+                          </>
+                        ) : (
+                          <>
+                            <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigate('/competitions'); }}>
+                              Daftar Lomba
                             </Button>
-                          </div>
+                            <div className="w-full pt-2 border-t border-dashed">
+                              <p className="text-xs font-semibold text-muted-foreground mb-2 text-center">Tanya Koordinator SOS via WA:</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putra', comp.title)}>
+                                  Putra
+                                </Button>
+                                <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putri', comp.title)}>
+                                  Putri
+                                </Button>
+                              </div>
+                            </div>
+                          </>
                         )}
-                        <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigate('/competitions'); }}>
-                          Daftar Lomba
-                        </Button>
-                        <div className="w-full pt-2 border-t border-dashed">
-                          <p className="text-xs font-semibold text-muted-foreground mb-2 text-center">Tanya Koordinator SOS via WA:</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putra', comp.title)}>
-                              Putra
-                            </Button>
-                            <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={(e) => handleContactCoordinator(e, 'Putri', comp.title)}>
-                              Putri
-                            </Button>
-                          </div>
-                        </div>
                       </CardFooter>
                     </Card>
                   );
@@ -673,9 +685,20 @@ export function InternalHome() {
             </div>
 
             <DialogFooter>
-              <Button onClick={() => navigate('/competitions')} className="w-full sm:w-auto">
-                Daftar Lomba
-              </Button>
+              { (userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) ? (
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button variant="outline" onClick={() => { setEditingComp(selectedComp); setSelectedComp(null); }}>
+                    Edit Info
+                  </Button>
+                  <Button onClick={() => navigate('/admin/registrations')}>
+                    Pendaftar Lomba
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={() => navigate('/competitions')} className="w-full sm:w-auto">
+                  Daftar Lomba
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         )}
