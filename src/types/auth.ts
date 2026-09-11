@@ -10,4 +10,6 @@ export interface UserProfile {
   role: UserRole;
   name: string;
   isBlocked?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
 }

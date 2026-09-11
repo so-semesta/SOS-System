@@ -10,6 +10,7 @@ import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { Textarea } from '../../../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../../../components/ui/dialog';
 import { Checkbox } from '../../../components/ui/checkbox';
 import { toast } from 'sonner';
 
@@ -18,7 +19,7 @@ const PREDEFINED_FIELDS = [
   'Fisika', 'Biologi', 'Kimia', 'Kebumian', 'Ekonomi', 
   'Informatika', 'Logika'
 ];
-import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud } from 'lucide-react';
+import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud, Copy, Terminal } from 'lucide-react';
 import { useAuth } from "../../../context/AuthContext";
 import { emptyImagePlaceholder } from "../../../lib/assets";
 import { LOGO_BASE64 } from "../../../lib/constants";
@@ -52,6 +53,8 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.posterUrl || null);
+  const [isManualAiOpen, setIsManualAiOpen] = useState(false);
+  const [manualAiInput, setManualAiInput] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +84,52 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
     control: form.control,
     name: "rounds",
   });
+
+  
+  const handleApplyManualAI = () => {
+    try {
+      // Allow user to paste with or without markdown backticks
+      let cleanInput = manualAiInput.trim();
+      if (cleanInput.startsWith('```json')) {
+        cleanInput = cleanInput.replace(/```json/g, '').replace(/```/g, '').trim();
+      } else if (cleanInput.startsWith('```')) {
+        cleanInput = cleanInput.replace(/```/g, '').trim();
+      }
+      
+      const data = JSON.parse(cleanInput);
+      
+      if (data.title) form.setValue('title', data.title);
+      if (data.field && Array.isArray(data.field)) {
+        const validFields = data.field.filter((f: string) => PREDEFINED_FIELDS.includes(f));
+        form.setValue('field', validFields);
+      }
+      if (data.type && ['Daring', 'Luring', 'Hybrid'].includes(data.type)) form.setValue('type', data.type as 'Daring' | 'Luring' | 'Hybrid');
+      if (data.registrationDeadline) form.setValue('registrationDeadline', data.registrationDeadline);
+      if (data.fee !== undefined) form.setValue('fee', Number(data.fee) || 0);
+      if (data.location) form.setValue('location', data.location);
+      if (data.description) form.setValue('description', data.description);
+      
+      if (data.rounds && Array.isArray(data.rounds) && data.rounds.length > 0) {
+        // Clear existing rounds
+        const currentRounds = form.getValues('rounds');
+        for (let i = currentRounds.length - 1; i >= 0; i--) {
+          remove(i);
+        }
+        // Add new rounds
+        data.rounds.forEach((r: any) => {
+          if (r.name && r.date) {
+            append({ name: r.name, date: r.date });
+          }
+        });
+      }
+      
+      setIsManualAiOpen(false);
+      setManualAiInput('');
+      toast.success('Data dari AI berhasil diterapkan ke form!');
+    } catch (err) {
+      toast.error('Format JSON tidak valid. Pastikan Anda menyalin persis seperti balasan AI.');
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -285,24 +334,102 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
               </span>
             )}
 
-            <Button 
-              type="button" 
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
-              onClick={handleGenerateAI}
-              disabled={!selectedFile || isGenerating || submitting}
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading... AI sedang membaca poster (⏳ 10-20 detik)
-                </>
-              ) : (
-                <>
-                  <Wand2 className="mr-2 h-4 w-4" />
-                  Generate AI
-                </>
-              )}
-            </Button>
+            
+            <div className="flex gap-2">
+              <Button 
+                type="button" 
+                className="bg-purple-600/50 hover:bg-purple-600/50 text-white shadow-sm cursor-not-allowed"
+                disabled={true}
+                title="Fitur dinonaktifkan sementara karena limit API. Gunakan tombol Manual AI di sebelahnya."
+              >
+                <Wand2 className="mr-2 h-4 w-4" />
+                Generate AI (Dinonaktifkan)
+              </Button>
+              
+              <Dialog open={isManualAiOpen} onOpenChange={setIsManualAiOpen}>
+                <DialogTrigger render={<Button type="button" variant="secondary" className="border border-purple-200 text-purple-700 hover:bg-purple-100" />}>
+                  <Terminal className="mr-2 h-4 w-4" />
+                  Isi Manual via AI Lain
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Isi Form via AI Eksternal (ChatGPT/Gemini/Claude)</DialogTitle>
+                    <DialogDescription>
+                      Karena API internal sedang mencapai batas, Anda bisa menggunakan AI pihak ketiga secara gratis untuk mengekstrak data poster.
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4 my-2">
+                    <div className="p-4 bg-muted rounded-md text-sm">
+                      <p className="font-semibold mb-2">Langkah-langkah:</p>
+                      <ol className="list-decimal pl-5 space-y-1">
+                        <li>Buka ChatGPT (chatgpt.com) atau Gemini (gemini.google.com) di tab baru.</li>
+                        <li>Upload poster lomba Anda ke chat tersebut.</li>
+                        <li>Copy teks prompt (perintah) di bawah ini dan paste ke chat AI.</li>
+                        <li>Copy balasan AI (yang berbentuk format JSON), lalu paste ke kotak di bawah ini.</li>
+                      </ol>
+                    </div>
+                    
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label className="font-semibold">Prompt untuk AI (Copy ini):</Label>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => {
+                            navigator.clipboard.writeText(`Tolong ekstrak informasi kompetisi/lomba dari poster yang saya lampirkan ini. Balas HANYA dengan JSON mentah sesuai format berikut, tanpa penjelasan apa pun, tanpa markdown backticks (jangan gunakan \`\`\`json). Format:
+{
+  "title": "Judul Acara",
+  "field": ["IPA", "Matematika", "dsb (Pilih dari: IPA, IPS, Matematika, Astronomi, Geografi, Fisika, Biologi, Kimia, Kebumian, Ekonomi, Informatika, Logika)"],
+  "type": "Daring", // (Daring/Luring/Hybrid)
+  "registrationDeadline": "YYYY-MM-DD",
+  "fee": 0, // angka murni tanpa titik/koma
+  "location": "Nama Tempat/Platform",
+  "description": "Deskripsi singkat",
+  "rounds": [
+    { "name": "Penyisihan", "date": "YYYY-MM-DD" }
+  ]
+}`);
+                            toast.success("Prompt disalin!");
+                          }}
+                        >
+                          <Copy className="h-3 w-3 mr-1" /> Copy Prompt
+                        </Button>
+                      </div>
+                      <div className="p-3 bg-slate-900 text-slate-100 rounded-md text-xs font-mono whitespace-pre-wrap">
+                        {`Tolong ekstrak informasi kompetisi/lomba dari poster yang saya lampirkan ini. Balas HANYA dengan JSON mentah sesuai format berikut, tanpa penjelasan apa pun, tanpa markdown backticks (jangan gunakan \`\`\`json). Format:
+{
+  "title": "Judul Acara",
+  "field": ["IPA", "Matematika", "dsb (Pilih dari: IPA, IPS, Matematika, Astronomi, Geografi, Fisika, Biologi, Kimia, Kebumian, Ekonomi, Informatika, Logika)"],
+  "type": "Daring", // (Daring/Luring/Hybrid)
+  "registrationDeadline": "YYYY-MM-DD",
+  "fee": 0, // angka murni tanpa titik/koma
+  "location": "Nama Tempat/Platform",
+  "description": "Deskripsi singkat",
+  "rounds": [
+    { "name": "Penyisihan", "date": "YYYY-MM-DD" }
+  ]
+}`}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label className="font-semibold mb-1 block">Paste Balasan AI di sini:</Label>
+                      <Textarea 
+                        placeholder={'{\n  "title": "Olimpiade Sains",\n  ...\n}'}
+                        className="font-mono text-xs min-h-[150px]"
+                        value={manualAiInput}
+                        onChange={(e) => setManualAiInput(e.target.value)}
+                      />
+                    </div>
+                    
+                    <Button onClick={handleApplyManualAI} className="w-full">
+                      Terapkan Data ke Form
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
           
           {previewUrl && (

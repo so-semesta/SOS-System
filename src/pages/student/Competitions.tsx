@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Checkbox } from '../../components/ui/checkbox';
 import { toast } from "sonner";
 import { safeFormatDate } from "../../lib/utils";
-import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle, Clock } from 'lucide-react';
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
@@ -149,11 +149,17 @@ export function Competitions() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  const [myProposals, setMyProposals] = useState<Competition[]>([]);
+
   const loadData = async () => {
     if (!currentUser) return;
     try {
       const comps = await getAllCompetitions();
-      const approvedComps = comps.filter(c => c.isApproved !== false || c.proposedByUserId === currentUser.uid);
+      // In the catalog and overall lists, only show approved competitions.
+      const approvedComps = comps.filter(c => c.isApproved !== false);
+      const pendingProposals = comps.filter(c => c.isApproved === false && c.proposedByUserId === currentUser.uid);
+      setMyProposals(pendingProposals);
+      
       const regs = await getStudentRegistrations(currentUser.uid);
       const profile = await getStudentProfile(currentUser.uid);
       
@@ -585,12 +591,43 @@ export function Competitions() {
 
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Memuat lomba saya...</div>
-          ) : registrations.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              Anda belum mengajukan perizinan lomba apapun.
-            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <>
+              {myProposals.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-xl font-bold mb-4 flex items-center">
+                    <Clock className="w-5 h-5 mr-2 text-orange-500" /> Usulan Lomba (Menunggu Persetujuan)
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {myProposals.map(comp => (
+                      <Card key={comp.id} className="flex flex-col border-dashed border-2 bg-muted/30 opacity-70">
+                        <CardHeader className="pb-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <Badge variant="secondary">Menunggu Persetujuan</Badge>
+                          </div>
+                          <CardTitle className="text-lg line-clamp-2 text-muted-foreground">{comp.title}</CardTitle>
+                          <CardDescription>
+                            Diusulkan pada: {safeFormatDate(comp.createdAt)}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-sm">
+                           <div className="flex items-center text-muted-foreground">
+                            <MapPin className="mr-2 h-4 w-4" />
+                            {comp.location || '-'}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {registrations.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+                  Anda belum mengajukan perizinan lomba apapun.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {registrations.map(reg => {
                 const comp = competitions.find(c => c.id === reg.competitionId);
                 return (
@@ -620,6 +657,8 @@ export function Competitions() {
                 );
               })}
             </div>
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>

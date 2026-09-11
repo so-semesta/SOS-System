@@ -42,7 +42,7 @@ async function startServer() {
       const prompt = "Ekstrak informasi kompetisi/lomba dari poster ini. Balas HANYA dengan JSON mentah. Tanpa backticks, tanpa format markdown (```json). Langsung mulai dengan tanda { dan akhiri dengan }.";
       
       const aiResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.6-flash",
         contents: {
           parts: [
             { inlineData: { data: cleanBase64, mimeType: mimeType || "image/jpeg" } },
@@ -93,7 +93,9 @@ async function startServer() {
       console.error("GEMINI_ERROR:", err);
       let errorMessage = err.message || "Gagal menghubungi Gemini API";
       
-      if (errorMessage.includes("API key not valid") || errorMessage.includes("API_KEY_INVALID")) {
+      if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("prepayment credits are depleted")) {
+        errorMessage = "Kuota API Key Gemini Anda telah habis (Error 429: Resource Exhausted). Silakan periksa tagihan atau gunakan API Key lain yang memiliki kuota di menu Settings.";
+      } else if (errorMessage.includes("API key not valid") || errorMessage.includes("API_KEY_INVALID")) {
         errorMessage = "API Key yang Anda masukkan tidak valid. Kunci dengan awalan 'AQ' adalah format baru yang benar! Namun sepertinya ada sedikit kesalahan saat menyalin, atau kuncinya belum aktif. Coba hapus kunci di menu Secrets, buat kunci baru di aistudio.google.com, pastikan tersalin semua (tidak ada yang terpotong), lalu masukkan kembali.";
       }
       

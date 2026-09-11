@@ -29,7 +29,8 @@ service cloud.firestore {
 
     // Note: To check roles, we fetch from the users collection
     function isAdmin() {
-      return isSignedIn() && (
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MANAGEMENT'
       );
@@ -96,12 +97,13 @@ service cloud.firestore {
       // Since it's a client app, students create their own profiles.
       allow create: if isSignedIn() && isValidId(userId) && isOwner(userId) && 
                        isValidUserProfile(incoming()) && 
-                       (incoming().role == 'STUDENT' || incoming().role == 'TEACHER');
+                       (incoming().role == 'STUDENT' || incoming().role == 'TEACHER' || (incoming().role == 'ADMIN' && request.auth.token.email == 'scienceolympiad@semesta.sch.id'));
       
-      // Updates: Admins can update anything. Users can update their own profile EXCEPT role.
+      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email).
       allow update: if isSignedIn() && isValidId(userId) && isValidUserProfile(incoming()) && (
         isAdmin() || 
-        (isOwner(userId) && incoming().role == existing().role)
+        (isOwner(userId) && incoming().role == existing().role) ||
+        (isOwner(userId) && request.auth.token.email == 'scienceolympiad@semesta.sch.id' && incoming().role == 'ADMIN')
       );
       
       allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
@@ -127,7 +129,21 @@ service cloud.firestore {
     // Competitions
     match /competitions/{competitionId} {
       allow read: if true;
-      allow write: if isSignedIn() && isValidId(competitionId) && isAdmin();
+      allow create: if isSignedIn() && isValidId(competitionId) && (
+        isAdmin() || 
+        (
+          request.resource.data.keys().hasAll(['isApproved']) == false || 
+          request.resource.data.isApproved == false
+        )
+      );
+      allow update: if isSignedIn() && isValidId(competitionId) && (
+        isAdmin() ||
+        (existing().proposedByUserId == request.auth.uid)
+      );
+      allow delete: if isSignedIn() && isValidId(competitionId) && (
+        isAdmin() ||
+        (existing().proposedByUserId == request.auth.uid)
+      );
     }
 
     // Registrations

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signOut as firebaseSignOut, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { UserRole, UserProfile } from '../types/auth';
 import { toast } from 'sonner';
@@ -52,6 +52,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               setCurrentUser(null);
               toast.error('Akun Anda telah diblokir. Silakan hubungi administrator.');
             } else {
+              // Auto-upgrade master email to admin if it got stuck as student
+              if (user.email === 'scienceolympiad@semesta.sch.id' && data.role !== UserRole.ADMIN) {
+                try {
+                  await updateDoc(docRef, { role: UserRole.ADMIN, updatedAt: Date.now() });
+                  data.role = UserRole.ADMIN;
+                } catch (e) {
+                  console.error("Failed to auto-upgrade to admin:", e);
+                }
+              }
               setUserProfile(data);
             }
           } else {
@@ -62,6 +71,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               role: user.email === 'scienceolympiad@semesta.sch.id' ? UserRole.ADMIN : UserRole.STUDENT,
               name: user.displayName || 'Student',
               isBlocked: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
             };
             await setDoc(docRef, newUserProfile);
             setUserProfile(newUserProfile);
@@ -101,6 +112,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           role: user.email === 'scienceolympiad@semesta.sch.id' ? UserRole.ADMIN : UserRole.STUDENT,
           name: user.displayName || 'Student',
           isBlocked: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
         await setDoc(docRef, newUserProfile);
         setUserProfile(newUserProfile);
@@ -111,6 +124,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           toast.error('Akun Anda telah diblokir.');
           return;
         }
+        
+        // Auto-upgrade master email to admin if it got stuck as student
+        if (user.email === 'scienceolympiad@semesta.sch.id' && existingProfile.role !== UserRole.ADMIN) {
+          try {
+            await updateDoc(docRef, { role: UserRole.ADMIN, updatedAt: Date.now() });
+            existingProfile.role = UserRole.ADMIN;
+          } catch (e) {
+            console.error("Failed to auto-upgrade to admin:", e);
+          }
+        }
+        
+        setUserProfile(existingProfile);
       }
     } catch (error: any) {
       if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
