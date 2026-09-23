@@ -16,6 +16,7 @@ import { CurationColor, CompetitionStatus } from '../types';
 import { CompetitionForm } from '../components/features/competitions/CompetitionForm';
 import { BroadcastDialog } from '../components/features/competitions/BroadcastDialog';
 import { FullscreenCompetitionDisplay } from '../components/features/competitions/FullscreenCompetitionDisplay';
+import { AgendaPresentationModal } from '../components/features/competitions/AgendaPresentationModal';
 import { useNavigate } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { toast } from 'sonner';
@@ -88,6 +89,7 @@ export function InternalHome() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showBroadcastDialog, setShowBroadcastDialog] = useState(false);
   const [showFullscreenDisplay, setShowFullscreenDisplay] = useState(false);
+  const [showAgendaPresentation, setShowAgendaPresentation] = useState(false);
 
   const handleApprove = async (e: React.MouseEvent, compId: string) => {
     e.stopPropagation();
@@ -390,11 +392,21 @@ export function InternalHome() {
 
         {/* Kalender Lomba (Right) */}
         <Card className="h-[500px] flex flex-col">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center text-xl">
-              <CalendarIcon className="mr-2 h-5 w-5 text-primary" />
-              Kalender Lomba
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center text-xl">
+                <CalendarIcon className="mr-2 h-5 w-5 text-primary" />
+                Kalender Lomba
+              </CardTitle>
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => setShowAgendaPresentation(true)}
+                className="h-8 text-xs font-semibold text-indigo-700 border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 flex items-center shadow-xs"
+              >
+                <MonitorPlay className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> Mode Presentasi Agenda
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden pb-4 px-4">
             {loading ? (
@@ -441,9 +453,23 @@ export function InternalHome() {
                   Filter Kompetisi
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowFullscreenDisplay(true)} className="flex items-center gap-2">
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    onClick={() => setShowAgendaPresentation(true)} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2 font-semibold shadow-sm"
+                  >
                     <MonitorPlay className="h-4 w-4" />
-                    <span className="hidden sm:inline">Mode Presentasi</span>
+                    <span>Mode Presentasi Agenda</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowFullscreenDisplay(true)} 
+                    className="hidden sm:flex items-center gap-2 text-slate-700"
+                    title="Display Layar Penuh Auto-Scroll"
+                  >
+                    <span className="text-xs">Rolling Display</span>
                   </Button>
                   {(userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
                     <Button variant="outline" size="sm" onClick={() => setShowBroadcastDialog(true)} className="flex items-center gap-2">
@@ -723,6 +749,13 @@ export function InternalHome() {
           onClose={() => setShowFullscreenDisplay(false)} 
         />
       )}
+
+      <AgendaPresentationModal
+        open={showAgendaPresentation}
+        onClose={() => setShowAgendaPresentation(false)}
+        competitions={competitions}
+        initialRegistrations={myRegistrations}
+      />
 </div>
   );
 }

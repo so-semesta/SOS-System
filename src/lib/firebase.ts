@@ -1,6 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  doc, 
+  getDocFromServer, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  memoryLocalCache
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -18,12 +26,18 @@ if (typeof window !== 'undefined') {
   const isIframe = window.self !== window.top;
   
   if (isIframe) {
-    // Disable offline cache in iframe to prevent storage access errors
-    firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+    // Disable persistent storage in iframe to prevent storage access errors,
+    // and force long polling to bypass iframe/proxy WebChannel streaming timeouts.
+    firestoreDb = initializeFirestore(app, {
+      localCache: memoryLocalCache(),
+      experimentalForceLongPolling: true,
+    }, firebaseConfig.firestoreDatabaseId);
   } else {
     // Enable persistent offline cache when accessed directly (e.g. GitHub Pages / Vercel)
+    // and use long polling for reliable connectivity behind reverse proxies/firewalls.
     firestoreDb = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      experimentalForceLongPolling: true,
     }, firebaseConfig.firestoreDatabaseId);
   }
 } else {

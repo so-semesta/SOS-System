@@ -59,13 +59,16 @@ export function GuidanceMonitor() {
 
       const usersQuery = query(collection(db, 'users'), where('role', '==', 'STUDENT'));
       const usersSnap = await getDocs(usersQuery);
-      const activeStudents = usersSnap.docs.map(doc => ({
-        id: doc.id,
-        userId: doc.id,
-        fullName: doc.data().name || doc.data().email || 'Unknown',
-        grade: 'Active'
-      }));
-      setStudents(activeStudents as any);
+      const studentMap = new Map<string, any>();
+      usersSnap.docs.forEach(doc => {
+        studentMap.set(doc.id, {
+          id: doc.id,
+          userId: doc.id,
+          fullName: doc.data().name || doc.data().email || 'Unknown',
+          grade: 'Active'
+        });
+      });
+      setStudents(Array.from(studentMap.values()) as any);
     } catch (error) {
       toast.error('Gagal mengambil data monitoring guidance');
     } finally {
@@ -222,7 +225,7 @@ export function GuidanceMonitor() {
               <SelectContent>
                 <SelectItem value="ALL">Semua Siswa</SelectItem>
                 {students.map(s => (
-                  <SelectItem key={s.userId} value={s.userId}>
+                  <SelectItem key={s.userId || s.id} value={s.userId || s.id}>
                     {s.fullName}
                   </SelectItem>
                 ))}

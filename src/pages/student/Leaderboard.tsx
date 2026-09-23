@@ -53,7 +53,11 @@ export function Leaderboard() {
           }
         });
 
-        const leaderboardData: LeaderboardEntry[] = students
+        const uniqueStudents = Array.from(
+          new Map(students.map(s => [s.userId || s.id, s])).values()
+        );
+
+        const leaderboardData: LeaderboardEntry[] = uniqueStudents
           .map(student => ({
             student,
             totalPoints: pointsMap[student.userId] || 0,
@@ -164,7 +168,7 @@ export function Leaderboard() {
                   </TableHeader>
                   <TableBody>
                     {leaderboard.map((entry, index) => (
-                      <TableRow key={entry.student.id}>
+                      <TableRow key={entry.student.userId || entry.student.id || `entry-${index}`}>
                         <TableCell className="text-center font-semibold text-muted-foreground">
                           {index + 1}
                         </TableCell>

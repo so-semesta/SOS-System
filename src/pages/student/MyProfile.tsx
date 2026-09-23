@@ -34,19 +34,22 @@ export function MyProfile() {
     if (!currentUser) return;
     setSaving(true);
     try {
-      if (profile) {
-        await updateStudentProfile(profile.id, data);
-        setProfile({ ...profile, ...data } as Student);
+      // Check existing profile in case state was stale
+      const existingProfile = profile || (await getStudentProfile(currentUser.uid));
+      if (existingProfile) {
+        await updateStudentProfile(existingProfile.id, { ...data, updatedAt: Date.now() });
+        setProfile({ ...existingProfile, ...data, updatedAt: Date.now() } as Student);
         toast.success('Profil berhasil diperbaharui');
       } else {
-        const newId = `stu_${Date.now()}`;
+        const studentDocId = currentUser.uid;
         const newStudent = {
           ...data,
           userId: currentUser.uid,
           createdAt: Date.now(),
+          updatedAt: Date.now(),
         } as Omit<Student, 'id'>;
-        await createStudentProfile(newId, newStudent);
-        setProfile({ id: newId, ...newStudent });
+        await createStudentProfile(studentDocId, newStudent);
+        setProfile({ id: studentDocId, ...newStudent });
         toast.success('Profil berhasil dibuat');
       }
       setIsEditMode(false);

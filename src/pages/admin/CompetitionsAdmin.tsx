@@ -8,9 +8,10 @@ import { Badge } from '../../components/ui/badge';
 import { toast } from 'sonner';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { Pencil, Trash2, AlertTriangle, Download, Archive, ArchiveRestore } from 'lucide-react';
+import { Pencil, Trash2, AlertTriangle, Download, Archive, ArchiveRestore, MonitorPlay } from 'lucide-react';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
+import { AgendaPresentationModal } from '../../components/features/competitions/AgendaPresentationModal';
 
 export function CompetitionsAdmin() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -22,6 +23,7 @@ export function CompetitionsAdmin() {
   const [clashFilter, setClashFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
   const [archivedCompetitions, setArchivedCompetitions] = useState<Competition[]>([]);
+  const [showAgendaPresentation, setShowAgendaPresentation] = useState(false);
 
   const loadData = async () => {
     try {
@@ -219,6 +221,14 @@ export function CompetitionsAdmin() {
                 <option key={c.id} value={c.id}>Tabrakan: {c.title}</option>
               ))}
             </select>
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={() => setShowAgendaPresentation(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center shadow-sm"
+            >
+              <MonitorPlay className="w-4 h-4 mr-1.5" /> Mode Presentasi Agenda
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="w-4 h-4 mr-2" /> Ekspor CSV
             </Button>
@@ -379,6 +389,12 @@ export function CompetitionsAdmin() {
         onClose={() => setDeletingCompId(null)} 
         onConfirm={confirmDelete}
         isLoading={isDeleting}
+      />
+
+      <AgendaPresentationModal
+        open={showAgendaPresentation}
+        onClose={() => setShowAgendaPresentation(false)}
+        competitions={competitions}
       />
     </div>
   );

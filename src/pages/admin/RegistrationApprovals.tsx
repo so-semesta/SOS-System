@@ -40,7 +40,15 @@ export function RegistrationApprovals() {
     setIsGodModeOpen(true);
     try {
       const studentsData = await getAllStudents();
-      setAllStudents(studentsData);
+      // Ensure strict uniqueness by userId or id
+      const uniqueMap = new Map<string, Student>();
+      studentsData.forEach(s => {
+        const key = s.userId || s.id;
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, s);
+        }
+      });
+      setAllStudents(Array.from(uniqueMap.values()));
     } catch (error) {
       toast.error('Gagal mengambil data siswa');
     }
@@ -497,7 +505,7 @@ export function RegistrationApprovals() {
                 </SelectTrigger>
                 <SelectContent>
                   {allStudents.map(s => (
-                    <SelectItem key={s.userId} value={s.userId}>
+                    <SelectItem key={s.userId || s.id} value={s.userId || s.id}>
                       {s.fullName} ({s.grade}) - {s.osnField}
                     </SelectItem>
                   ))}

@@ -52,24 +52,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               setCurrentUser(null);
               toast.error('Akun Anda telah diblokir. Silakan hubungi administrator.');
             } else {
-              // Auto-upgrade master email to admin if it got stuck as student
-              if (user.email === 'scienceolympiad@semesta.sch.id' && data.role !== UserRole.ADMIN) {
+              // Auto-upgrade master email to MANAGEMENT (Superadmin)
+              const isMasterEmail = user.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
+              if (isMasterEmail && data.role !== UserRole.MANAGEMENT) {
+                data.role = UserRole.MANAGEMENT;
                 try {
-                  await updateDoc(docRef, { role: UserRole.ADMIN, updatedAt: Date.now() });
-                  data.role = UserRole.ADMIN;
+                  await setDoc(docRef, { 
+                    uid: user.uid,
+                    email: user.email || '',
+                    name: data.name || user.displayName || 'Management',
+                    role: UserRole.MANAGEMENT, 
+                    updatedAt: Date.now(),
+                    createdAt: data.createdAt || Date.now()
+                  }, { merge: true });
                 } catch (e) {
-                  console.error("Failed to auto-upgrade to admin:", e);
+                  console.error("Failed to auto-upgrade to management:", e);
                 }
               }
               setUserProfile(data);
             }
           } else {
             // Implicit login handling, just in case (e.g. page refresh)
+            const isMasterEmail = user.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
             const newUserProfile: UserProfile = {
               uid: user.uid,
               email: user.email || '',
-              role: user.email === 'scienceolympiad@semesta.sch.id' ? UserRole.ADMIN : UserRole.STUDENT,
-              name: user.displayName || 'Student',
+              role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,
+              name: user.displayName || (isMasterEmail ? 'Management' : 'Student'),
               isBlocked: false,
               createdAt: Date.now(),
               updatedAt: Date.now(),
@@ -78,7 +87,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setUserProfile(newUserProfile);
           }
         } catch (error) {
-          console.error("Error fetching user profile:", error);
+          console.warn("Could not fetch user profile from Firestore, using session fallback:", error);
+          const isMasterEmail = user.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
+          setUserProfile({
+            uid: user.uid,
+            email: user.email || '',
+            role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,
+            name: user.displayName || (isMasterEmail ? 'Management' : 'Student'),
+            isBlocked: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
         }
       } else {
         setCurrentUser(null);
@@ -102,6 +121,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
       
+      const isMasterEmail = user.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
       const docRef = doc(db, 'users', user.uid);
       const docSnap = await getDoc(docRef);
       
@@ -109,8 +129,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const newUserProfile: UserProfile = {
           uid: user.uid,
           email: user.email || '',
-          role: user.email === 'scienceolympiad@semesta.sch.id' ? UserRole.ADMIN : UserRole.STUDENT,
-          name: user.displayName || 'Student',
+          role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,
+          name: user.displayName || (isMasterEmail ? 'Management' : 'Student'),
           isBlocked: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -125,13 +145,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
         
-        // Auto-upgrade master email to admin if it got stuck as student
-        if (user.email === 'scienceolympiad@semesta.sch.id' && existingProfile.role !== UserRole.ADMIN) {
+        // Auto-upgrade master email to MANAGEMENT if needed
+        if (isMasterEmail && existingProfile.role !== UserRole.MANAGEMENT) {
+          existingProfile.role = UserRole.MANAGEMENT;
           try {
-            await updateDoc(docRef, { role: UserRole.ADMIN, updatedAt: Date.now() });
-            existingProfile.role = UserRole.ADMIN;
+            await setDoc(docRef, { 
+              uid: user.uid,
+              email: user.email || '',
+              name: existingProfile.name || user.displayName || 'Management',
+              role: UserRole.MANAGEMENT, 
+              updatedAt: Date.now(),
+              createdAt: existingProfile.createdAt || Date.now()
+            }, { merge: true });
           } catch (e) {
-            console.error("Failed to auto-upgrade to admin:", e);
+            console.error("Failed to auto-upgrade to management:", e);
           }
         }
         

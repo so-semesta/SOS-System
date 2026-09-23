@@ -27,26 +27,38 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    // Note: To check roles, we fetch from the users collection
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'scienceolympiad@semesta.sch.id' ||
+        request.auth.token.email.matches('(?i)^scienceolympiad@semesta\\.sch\\.id$')
+      );
+    }
+
+    // Note: To check roles, we fetch from the users collection or check bootstrapped super admin
     function isAdmin() {
-      return isSignedIn() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MANAGEMENT'
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'MANAGEMENT', 'admin', 'management']
+          )
+        )
       );
     }
     
     function isTeacher() {
-       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'TEACHER';
+       return isSignedIn() && 
+              exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['TEACHER', 'teacher'];
     }
 
     // 3. Validation Helpers
     function isValidUserProfile(data) {
-      return data.uid is string && data.uid.size() <= 128 &&
-             data.email is string && data.email.size() <= 256 &&
-             data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'MANAGEMENT'] &&
-             data.createdAt is number && 
-             data.updatedAt is number;
+      return (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+             (!('role' in data) || (data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'MANAGEMENT', 'admin', 'teacher', 'student', 'management'])) &&
+             (!('createdAt' in data) || (data.createdAt is number || data.createdAt is timestamp)) && 
+             (!('updatedAt' in data) || (data.updatedAt is number || data.updatedAt is timestamp));
     }
 
     function isValidStudent(data) {
@@ -90,23 +102,23 @@ service cloud.firestore {
 
     // Users (Profiles)
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin() || isTeacher());
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTeacher());
       allow list: if isSignedIn() && (isAdmin() || isTeacher());
       
-      // Allow creation during sign-up. Cannot arbitrarily set admin role unless they already are (which is paradox, so only 'STUDENT' or matching token if we had custom claims, here we restrict creation to safe roles or force admin creation via functions)
-      // Since it's a client app, students create their own profiles.
-      allow create: if isSignedIn() && isValidId(userId) && isOwner(userId) && 
+      // Allow creation during sign-up. Cannot arbitrarily set admin role unless they already are or super admin
+      allow create: if isSignedIn() && isOwner(userId) && 
                        isValidUserProfile(incoming()) && 
-                       (incoming().role == 'STUDENT' || incoming().role == 'TEACHER' || (incoming().role == 'ADMIN' && request.auth.token.email == 'scienceolympiad@semesta.sch.id'));
+                       (incoming().role in ['STUDENT', 'TEACHER', 'student', 'teacher'] || 
+                        ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management']) && isSuperAdmin()));
       
-      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email).
-      allow update: if isSignedIn() && isValidId(userId) && isValidUserProfile(incoming()) && (
+      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email / super admin).
+      allow update: if isSignedIn() && isValidUserProfile(incoming()) && (
         isAdmin() || 
-        (isOwner(userId) && incoming().role == existing().role) ||
-        (isOwner(userId) && request.auth.token.email == 'scienceolympiad@semesta.sch.id' && incoming().role == 'ADMIN')
+        (isOwner(userId) && (!('role' in incoming()) || incoming().role == existing().role)) ||
+        (isOwner(userId) && isSuperAdmin())
       );
       
-      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
+      allow delete: if isSignedIn() && isAdmin();
     }
 
     // Students (Extended info)

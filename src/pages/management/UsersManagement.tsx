@@ -20,8 +20,11 @@ export function UsersManagement() {
       setLoading(true);
       const q = query(collection(db, 'users'));
       const snapshot = await getDocs(q);
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersData);
+      const userMap = new Map<string, any>();
+      snapshot.docs.forEach(doc => {
+        userMap.set(doc.id, { id: doc.id, ...doc.data() });
+      });
+      setUsers(Array.from(userMap.values()));
     } catch (error) {
       toast.error('Gagal mengambil data pengguna');
     } finally {

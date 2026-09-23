@@ -41,7 +41,7 @@ export function StudentsDirectory() {
       const mergedStudents: any[] = userList.map(u => {
         const profile = profileMap.get(u.uid);
         if (profile) {
-          return { ...profile, fullName: profile.fullName || (u as any).name || '', role: (u as any).role, isBlocked: (u as any).isBlocked };
+          return { ...profile, id: profile.id || u.uid, userId: u.uid, fullName: profile.fullName || (u as any).name || '', role: (u as any).role, isBlocked: (u as any).isBlocked };
         } else {
           return {
             id: u.uid,
@@ -59,7 +59,11 @@ export function StudentsDirectory() {
         }
       });
 
-      setStudents(mergedStudents);
+      const uniqueMerged = Array.from(
+        new Map(mergedStudents.map(s => [s.id || s.userId, s])).values()
+      );
+
+      setStudents(uniqueMerged);
     } catch (err) {
       toast.error('Gagal mengambil data siswa');
       console.error(err);
@@ -262,7 +266,7 @@ export function StudentsDirectory() {
               </TableRow>
             ) : (
               filteredStudents.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.id || s.userId}>
                   <TableCell className="font-medium">{s.fullName || '-'}</TableCell>
                   <TableCell>{s.nisn || '-'}</TableCell>
                   <TableCell>{s.grade || '-'}</TableCell>
