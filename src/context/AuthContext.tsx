@@ -3,6 +3,7 @@ import { onAuthStateChanged, User, signOut as firebaseSignOut, signInWithPopup, 
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { UserRole, UserProfile } from '../types/auth';
+import { migrateExistingStudentsToSos } from '../services/migrationService';
 import { toast } from 'sonner';
 
 interface AuthContextType {
@@ -29,6 +30,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Run migration for existing student accounts to SOS
+    migrateExistingStudentsToSos().catch(err => console.error("Migration error:", err));
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         if (!user.email?.endsWith('@semesta.sch.id')) {
@@ -45,7 +49,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const docRef = doc(db, 'users', user.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            const data = docSnap.data() as UserProfile;
+            const data = docSnap.data() as UserProfile & { isNewStudent?: boolean };
             if (data.isBlocked) {
               await firebaseSignOut(auth);
               setUserProfile(null);
@@ -68,18 +72,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 } catch (e) {
                   console.error("Failed to auto-upgrade to management:", e);
                 }
+              } else if (data.role === UserRole.STUDENT && !data.isNewStudent) {
+                // Migrate existing student to SOS
+                data.role = UserRole.SOS;
+                try {
+                  await updateDoc(docRef, {
+                    role: UserRole.SOS,
+                    migratedToSosAt: Date.now(),
+                    updatedAt: Date.now()
+                  });
+                } catch (e) {
+                  console.error("Failed to auto-migrate student to SOS:", e);
+                }
               }
               setUserProfile(data);
             }
           } else {
             // Implicit login handling, just in case (e.g. page refresh)
             const isMasterEmail = user.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
-            const newUserProfile: UserProfile = {
+            const newUserProfile: UserProfile & { isNewStudent?: boolean } = {
               uid: user.uid,
               email: user.email || '',
               role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,
               name: user.displayName || (isMasterEmail ? 'Management' : 'Student'),
               isBlocked: false,
+              isNewStudent: true,
               createdAt: Date.now(),
               updatedAt: Date.now(),
             };
@@ -126,19 +143,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const docSnap = await getDoc(docRef);
       
       if (!docSnap.exists()) {
-        const newUserProfile: UserProfile = {
+        const newUserProfile: UserProfile & { isNewStudent?: boolean } = {
           uid: user.uid,
           email: user.email || '',
           role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,
           name: user.displayName || (isMasterEmail ? 'Management' : 'Student'),
           isBlocked: false,
+          isNewStudent: true,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
         await setDoc(docRef, newUserProfile);
         setUserProfile(newUserProfile);
       } else {
-        const existingProfile = docSnap.data() as UserProfile;
+        const existingProfile = docSnap.data() as UserProfile & { isNewStudent?: boolean };
         if (existingProfile.isBlocked) {
           await firebaseSignOut(auth);
           toast.error('Akun Anda telah diblokir.');
@@ -159,6 +177,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }, { merge: true });
           } catch (e) {
             console.error("Failed to auto-upgrade to management:", e);
+          }
+        } else if (existingProfile.role === UserRole.STUDENT && !existingProfile.isNewStudent) {
+          // Migrate existing student to SOS
+          existingProfile.role = UserRole.SOS;
+          try {
+            await updateDoc(docRef, {
+              role: UserRole.SOS,
+              migratedToSosAt: Date.now(),
+              updatedAt: Date.now()
+            });
+          } catch (e) {
+            console.error("Failed to auto-migrate student to SOS:", e);
           }
         }
         

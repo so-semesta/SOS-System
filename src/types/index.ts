@@ -198,6 +198,7 @@ export interface OsnAnnouncement {
   id?: string;
   title: string;
   content: string;
+  targetAudience?: 'ALL' | 'SOS' | 'STUDENT';
 }
 
 export interface OsnBankSoal {
@@ -205,6 +206,7 @@ export interface OsnBankSoal {
   title: string;
   subject: string;
   fileUrl: string;
+  targetAudience?: 'ALL' | 'SOS' | 'STUDENT';
 }
 
 export interface ChatMessage {

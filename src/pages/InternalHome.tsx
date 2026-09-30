@@ -133,7 +133,7 @@ export function InternalHome() {
         let regsPromise: Promise<Registration[]> = Promise.resolve([]);
         let guidancePromise: Promise<GuidanceLog[]> = Promise.resolve([]);
 
-        if (userRole === UserRole.STUDENT && currentUser) {
+        if ((userRole === UserRole.STUDENT || userRole === UserRole.SOS) && currentUser) {
           regsPromise = getStudentRegistrations(currentUser.uid);
           guidancePromise = getStudentGuidanceLogs(currentUser.uid);
         }
@@ -146,14 +146,15 @@ export function InternalHome() {
         ]);
         
         let filteredComps = comps;
-        if (userRole !== UserRole.ADMIN && userRole !== UserRole.MANAGEMENT) {
+        const isAdminUser = userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
+        if (!isAdminUser) {
            filteredComps = comps.filter(c => c.isApproved !== false || c.proposedByUserId === currentUser?.uid);
         }
         
         setCompetitions(filteredComps);
         setAnnouncements(ann);
 
-        if (userRole === UserRole.STUDENT && currentUser) {
+        if ((userRole === UserRole.STUDENT || userRole === UserRole.SOS) && currentUser) {
           setMyRegistrations(regs);
           setMyGuidanceLogs(guidance.sort((a, b) => a.date - b.date)); // sort by date ascending for chart
         }
@@ -245,7 +246,7 @@ export function InternalHome() {
     });
   }, [competitions, searchTerm, selectedField, selectedCuration, sortBy]);
 
-  const isStudent = userRole === UserRole.STUDENT;
+  const isStudent = userRole === UserRole.STUDENT || userRole === UserRole.SOS;
   
   const competitionStats = useMemo(() => {
     let joined = 0;
@@ -277,7 +278,7 @@ export function InternalHome() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
-          { (userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
+          { (userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT) && (
             <Button size="sm" onClick={() => setEditingComp({} as any)} className="bg-indigo-600 hover:bg-indigo-700 ml-4">
               <Plus className="w-4 h-4 mr-1" /> Input Lomba
             </Button>

@@ -40,7 +40,10 @@ service cloud.firestore {
         isSuperAdmin() ||
         (
           exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'MANAGEMENT', 'admin', 'management']
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [
+              'ADMIN', 'MANAGEMENT', 'ADMIN_SOS', 'ADMIN_STUDENT',
+              'admin', 'management', 'admin_sos', 'admin_student'
+            ]
           )
         )
       );
@@ -56,7 +59,7 @@ service cloud.firestore {
     function isValidUserProfile(data) {
       return (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
              (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
-             (!('role' in data) || (data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'MANAGEMENT', 'admin', 'teacher', 'student', 'management'])) &&
+             (!('role' in data) || (data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'SOS', 'ADMIN_SOS', 'ADMIN_STUDENT', 'MANAGEMENT', 'admin', 'teacher', 'student', 'sos', 'admin_sos', 'admin_student', 'management'])) &&
              (!('createdAt' in data) || (data.createdAt is number || data.createdAt is timestamp)) && 
              (!('updatedAt' in data) || (data.updatedAt is number || data.updatedAt is timestamp));
     }
@@ -108,8 +111,8 @@ service cloud.firestore {
       // Allow creation during sign-up. Cannot arbitrarily set admin role unless they already are or super admin
       allow create: if isSignedIn() && isOwner(userId) && 
                        isValidUserProfile(incoming()) && 
-                       (incoming().role in ['STUDENT', 'TEACHER', 'student', 'teacher'] || 
-                        ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management']) && isSuperAdmin()));
+                       (incoming().role in ['STUDENT', 'SOS', 'TEACHER', 'student', 'sos', 'teacher'] || 
+                        ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management', 'ADMIN_SOS', 'admin_sos', 'ADMIN_STUDENT', 'admin_student']) && isSuperAdmin()));
       
       // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email / super admin).
       allow update: if isSignedIn() && isValidUserProfile(incoming()) && (
@@ -164,10 +167,10 @@ service cloud.firestore {
       // RELAXED FOR LEADERBOARD: All logged-in users can list registrations.
       allow list: if isSignedIn();
       
-      // Students can register themselves (status PENDING). Admins can do anything.
+      // Students can register themselves (status PENDING or APPROVED for regular students). Admins can do anything.
       allow create: if isSignedIn() && isValidId(registrationId) && 
                        isValidRegistration(incoming()) && 
-                       (isAdmin() || (incoming().studentId == request.auth.uid && incoming().status == 'PENDING'));
+                       (isAdmin() || (incoming().studentId == request.auth.uid && incoming().status in ['PENDING', 'APPROVED']));
                        
       // Students can't approve themselves
       allow update: if isSignedIn() && isValidId(registrationId) && 

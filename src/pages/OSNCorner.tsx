@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { BookOpen, FileText, Megaphone, Download, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, FileText, Megaphone, Download, Pencil, Plus, Trash2, Info } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 import { OsnAnnouncement, OsnBankSoal } from '../types';
@@ -11,7 +12,7 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
-import { Textarea } from '../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { ConfirmDeleteDialog } from '../components/ui/ConfirmDeleteDialog';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -24,13 +25,13 @@ const quillModules = {
     [{ 'align': [] }],
     [{ 'list': 'ordered'}, { 'list': 'bullet' }],
     ['link', 'clean'],
-    [{ 'color': [] }, { 'background': [] }] // Add colors optionally
+    [{ 'color': [] }, { 'background': [] }]
   ]
 };
 
 export function OSN() {
   const { userRole } = useAuth();
-  const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
+  const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
 
   const [announcements, setAnnouncements] = useState<OsnAnnouncement[]>([]);
   const [bankSoal, setBankSoal] = useState<OsnBankSoal[]>([]);
@@ -38,12 +39,12 @@ export function OSN() {
 
   // Modals state
   const [isEditInfoOpen, setIsEditInfoOpen] = useState(false);
-  const [infoForm, setInfoForm] = useState<Partial<OsnAnnouncement>>({ title: '', content: '' });
+  const [infoForm, setInfoForm] = useState<Partial<OsnAnnouncement>>({ title: '', content: '', targetAudience: 'ALL' });
   const [editingInfoId, setEditingInfoId] = useState<string | null>(null);
   const [deletingInfoId, setDeletingInfoId] = useState<string | null>(null);
 
   const [isSoalModalOpen, setIsSoalModalOpen] = useState(false);
-  const [soalForm, setSoalForm] = useState<Partial<OsnBankSoal>>({ title: '', subject: '', fileUrl: '' });
+  const [soalForm, setSoalForm] = useState<Partial<OsnBankSoal>>({ title: '', subject: '', fileUrl: '', targetAudience: 'ALL' });
   const [editingSoalId, setEditingSoalId] = useState<string | null>(null);
 
   const [deletingSoalId, setDeletingSoalId] = useState<string | null>(null);
@@ -69,16 +70,41 @@ export function OSN() {
     }
   };
 
+  // Filtered based on role: regular students only see items meant for ALL or STUDENT
+  const displayedAnnouncements = useMemo(() => {
+    if (userRole === UserRole.STUDENT) {
+      return announcements.filter(a => !a.targetAudience || a.targetAudience === 'ALL' || a.targetAudience === 'STUDENT');
+    }
+    return announcements;
+  }, [announcements, userRole]);
+
+  const displayedBankSoal = useMemo(() => {
+    if (userRole === UserRole.STUDENT) {
+      return bankSoal.filter(s => !s.targetAudience || s.targetAudience === 'ALL' || s.targetAudience === 'STUDENT');
+    }
+    return bankSoal;
+  }, [bankSoal, userRole]);
+
+  // Group soal by subject
+  const groupedSoal = useMemo(() => {
+    return displayedBankSoal.reduce((acc, soal) => {
+      const subj = soal.subject || 'Lainnya';
+      if (!acc[subj]) acc[subj] = [];
+      acc[subj].push(soal);
+      return acc;
+    }, {} as Record<string, OsnBankSoal[]>);
+  }, [displayedBankSoal]);
+
   // --- Announcement Handlers ---
   const handleOpenAddInfo = () => {
     setEditingInfoId(null);
-    setInfoForm({ title: '', content: '' });
+    setInfoForm({ title: '', content: '', targetAudience: 'ALL' });
     setIsEditInfoOpen(true);
   };
   
   const handleOpenEditInfo = (ann: OsnAnnouncement) => {
     setEditingInfoId(ann.id!);
-    setInfoForm({ title: ann.title, content: ann.content });
+    setInfoForm({ title: ann.title, content: ann.content, targetAudience: ann.targetAudience || 'ALL' });
     setIsEditInfoOpen(true);
   };
 
@@ -118,13 +144,13 @@ export function OSN() {
   // --- Bank Soal Handlers ---
   const handleOpenAddSoal = () => {
     setEditingSoalId(null);
-    setSoalForm({ title: '', subject: '', fileUrl: '' });
+    setSoalForm({ title: '', subject: '', fileUrl: '', targetAudience: 'ALL' });
     setIsSoalModalOpen(true);
   };
 
   const handleOpenEditSoal = (soal: OsnBankSoal) => {
     setEditingSoalId(soal.id!);
-    setSoalForm({ title: soal.title, subject: soal.subject, fileUrl: soal.fileUrl });
+    setSoalForm({ title: soal.title, subject: soal.subject, fileUrl: soal.fileUrl, targetAudience: soal.targetAudience || 'ALL' });
     setIsSoalModalOpen(true);
   };
 
@@ -141,7 +167,6 @@ export function OSN() {
         toast.success('Bank soal diperbarui');
       } else {
         await addOsnBankSoal(soalForm as Omit<OsnBankSoal, 'id'>);
-        // refresh list to get ID
         const soal = await getOsnBankSoal();
         setBankSoal(soal);
         toast.success('Bank soal ditambahkan');
@@ -167,14 +192,6 @@ export function OSN() {
     }
   };
 
-  // Group soal by subject
-  const groupedSoal = bankSoal.reduce((acc, soal) => {
-    const subj = soal.subject || 'Lainnya';
-    if (!acc[subj]) acc[subj] = [];
-    acc[subj].push(soal);
-    return acc;
-  }, {} as Record<string, OsnBankSoal[]>);
-
   if (loading) {
     return <div>Memuat...</div>;
   }
@@ -185,6 +202,19 @@ export function OSN() {
         <h1 className="text-3xl font-bold tracking-tight">OSN Corner</h1>
         <p className="text-muted-foreground">Pusat informasi, bank soal, dan pengumuman terkait Olimpiade Sains Nasional.</p>
       </div>
+
+      {/* Notice for Student role */}
+      {userRole === UserRole.STUDENT && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg flex items-start gap-3">
+          <Info className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold text-sm">Akses Informasi Terbuka untuk Siswa</div>
+            <div className="text-xs text-amber-700 mt-0.5">
+              Anda sedang mengakses materi dan silabus umum OSN. Materi pembinaan intensif dan bank soal terarah dikhususkan untuk skuad SOS.
+            </div>
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="silabus" className="w-full">
         <TabsList className="grid w-full grid-cols-2 mb-8 max-w-md">
@@ -212,17 +242,24 @@ export function OSN() {
               )}
             </div>
             
-            {announcements.length === 0 ? (
+            {displayedAnnouncements.length === 0 ? (
               <Card>
                 <CardContent className="py-8 text-center text-muted-foreground">
                   Belum ada informasi yang ditambahkan.
                 </CardContent>
               </Card>
             ) : (
-              announcements.map((ann) => (
+              displayedAnnouncements.map((ann) => (
                 <Card key={ann.id}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-lg">{ann.title || 'Informasi'}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg">{ann.title || 'Informasi'}</CardTitle>
+                      {ann.targetAudience && ann.targetAudience !== 'ALL' && (
+                        <Badge variant="outline" className={ann.targetAudience === 'SOS' ? "bg-purple-50 text-purple-700 border-purple-200 text-xs" : "bg-blue-50 text-blue-700 border-blue-200 text-xs"}>
+                          {ann.targetAudience === 'SOS' ? 'Khusus SOS' : 'Khusus Siswa'}
+                        </Badge>
+                      )}
+                    </div>
                     {isManagement && (
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => handleOpenEditInfo(ann)}>
@@ -273,8 +310,13 @@ export function OSN() {
                             <div className="p-2 bg-blue-100 text-blue-600 rounded-md shrink-0">
                               <FileText className="w-5 h-5" />
                             </div>
-                            <div>
+                            <div className="space-y-1">
                               <p className="font-medium text-sm line-clamp-2">{soal.title}</p>
+                              {soal.targetAudience && soal.targetAudience !== 'ALL' && (
+                                <Badge variant="outline" className={soal.targetAudience === 'SOS' ? "bg-purple-50 text-purple-700 border-purple-200 text-xs" : "bg-blue-50 text-blue-700 border-blue-200 text-xs"}>
+                                  {soal.targetAudience === 'SOS' ? 'Khusus SOS' : 'Khusus Siswa'}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                           
@@ -315,6 +357,24 @@ export function OSN() {
               <Label>Judul Informasi</Label>
               <Input value={infoForm.title || ''} onChange={e => setInfoForm({...infoForm, title: e.target.value})} />
             </div>
+            {isManagement && (
+              <div className="space-y-2">
+                <Label>Target Pembaca / Akses</Label>
+                <Select 
+                  value={infoForm.targetAudience || 'ALL'} 
+                  onValueChange={(val: any) => setInfoForm({...infoForm, targetAudience: val})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih target akses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Semua Siswa (SOS & Siswa Reguler)</SelectItem>
+                    <SelectItem value="SOS">Hanya Tim SOS</SelectItem>
+                    <SelectItem value="STUDENT">Hanya Siswa Reguler</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Konten / Pengumuman / Silabus</Label>
               <div className="h-[400px] mb-12">
@@ -367,6 +427,24 @@ export function OSN() {
                 onChange={e => setSoalForm({...soalForm, fileUrl: e.target.value})} 
               />
             </div>
+            {isManagement && (
+              <div className="space-y-2">
+                <Label>Target Pembaca / Akses</Label>
+                <Select 
+                  value={soalForm.targetAudience || 'ALL'} 
+                  onValueChange={(val: any) => setSoalForm({...soalForm, targetAudience: val})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih target akses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Semua Siswa (SOS & Siswa Reguler)</SelectItem>
+                    <SelectItem value="SOS">Hanya Tim SOS</SelectItem>
+                    <SelectItem value="STUDENT">Hanya Siswa Reguler</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsSoalModalOpen(false)}>Batal</Button>

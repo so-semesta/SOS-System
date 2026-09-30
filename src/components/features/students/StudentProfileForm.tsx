@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { toast } from 'sonner';
 import { Student } from '../../../types';
+import { useAuth } from '../../../context/AuthContext';
+import { UserRole } from '../../../types/auth';
 
 interface StudentProfileFormProps {
   initialData?: Student | null;
@@ -20,6 +22,8 @@ interface StudentProfileFormProps {
 }
 
 export function StudentProfileForm({ initialData, studentId, onSave, isLoading }: StudentProfileFormProps) {
+  const { userRole } = useAuth();
+  const isRegularStudent = userRole === UserRole.STUDENT;
   const [activeTab, setActiveTab] = useState('pribadi');
 
   // Custom default values transforming timestamp to yyyy-mm-dd
@@ -82,7 +86,9 @@ export function StudentProfileForm({ initialData, studentId, onSave, isLoading }
               <TabsTrigger value="pribadi" className="py-2 text-xs md:text-sm">Data Pribadi</TabsTrigger>
               <TabsTrigger value="kontak" className="py-2 text-xs md:text-sm">Kontak</TabsTrigger>
               <TabsTrigger value="alamat" className="py-2 text-xs md:text-sm">Alamat Lengkap</TabsTrigger>
-              <TabsTrigger value="ortu" className="py-2 text-xs md:text-sm">Data Orang Tua</TabsTrigger>
+              <TabsTrigger value="ortu" className="py-2 text-xs md:text-sm">
+                Data Orang Tua {isRegularStudent ? '(Opsional)' : ''}
+              </TabsTrigger>
             </TabsList>
 
             {/* TAB PRIBADI */}
@@ -104,14 +110,14 @@ export function StudentProfileForm({ initialData, studentId, onSave, isLoading }
                   {errors.grade && <p className="text-red-500 text-xs">{errors.grade.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Bidang OSN</Label>
+                  <Label>{isRegularStudent ? 'Bidang Minat' : 'Bidang OSN'}</Label>
                   <Controller
                     control={control}
                     name="osnField"
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value || ""}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Pilih Bidang OSN" />
+                          <SelectValue placeholder={isRegularStudent ? "Pilih Bidang Minat" : "Pilih Bidang OSN"} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="IPA">IPA</SelectItem>
@@ -267,13 +273,25 @@ export function StudentProfileForm({ initialData, studentId, onSave, isLoading }
                     </div>
                  </div>
                </div>
-               <div className="flex justify-end pt-4">
-                <Button type="button" onClick={() => handleNextTab('alamat')}>Selanjutnya</Button>
+               <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4">
+                {isRegularStudent && (
+                  <Button type="submit" disabled={isLoading} variant="secondary" className="border w-full sm:w-auto">
+                    {isLoading ? 'Menyimpan...' : 'Simpan Profil (Tanpa Data Orang Tua)'}
+                  </Button>
+                )}
+                <Button type="button" className="w-full sm:w-auto ml-auto" onClick={() => handleNextTab('alamat')}>
+                  {isRegularStudent ? 'Lanjut ke Data Orang Tua (Opsional)' : 'Selanjutnya'}
+                </Button>
                </div>
             </TabsContent>
 
             {/* TAB DATA ORANG TUA */}
             <TabsContent value="ortu" className="space-y-4">
+              {isRegularStudent && (
+                <div className="p-3 mb-2 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-xs">
+                  ℹ️ <strong>Catatan untuk Siswa:</strong> Pengisian Data Orang Tua di bawah ini bersifat opsional / tidak wajib diisi untuk role Siswa.
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  {/* Ibu */}
                  <div className="space-y-4 bg-muted/20 p-4 rounded-lg border-l-4 border-l-pink-400">

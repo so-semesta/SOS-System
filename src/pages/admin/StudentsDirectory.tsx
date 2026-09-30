@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { getAllStudents, updateStudentProfile } from '../../services/studentService';
 import { Student } from '../../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
-import { Search, Pencil, Trash2, Download } from 'lucide-react';
+import { Badge } from '../../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { Search, Pencil, Trash2, Download, ShieldCheck, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { StudentProfileForm } from '../../components/features/students/StudentProfileForm';
@@ -19,20 +21,36 @@ export function StudentsDirectory() {
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  
+  // Sortir state for Management/Admin: default SOS
+  const initialRoleFilter = userRole === UserRole.ADMIN_STUDENT ? 'STUDENT' : 'SOS';
+  const [roleFilter, setRoleFilter] = useState<string>(initialRoleFilter);
+
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const isRoleLocked = userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
+
   const loadData = async () => {
     try {
       setLoading(true);
-      // Fetch users based on role
-      const rolesToFetch = userRole === UserRole.ADMIN ? [UserRole.STUDENT, UserRole.MANAGEMENT] : [UserRole.STUDENT];
+      // Determine which user roles this admin can fetch
+      let rolesToFetch: string[] = [];
+      if (userRole === UserRole.ADMIN_SOS) {
+        rolesToFetch = [UserRole.SOS];
+      } else if (userRole === UserRole.ADMIN_STUDENT) {
+        rolesToFetch = [UserRole.STUDENT];
+      } else {
+        // ADMIN & MANAGEMENT can fetch both SOS and STUDENT
+        rolesToFetch = [UserRole.SOS, UserRole.STUDENT];
+      }
+
       const usersQuery = query(collection(db, 'users'), where('role', 'in', rolesToFetch));
       const usersSnap = await getDocs(usersQuery);
       const userList = usersSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
 
-      // Fetch profiles
+      // Fetch extended profiles
       const data = await getAllStudents();
       const profileMap = new Map();
       data.forEach(p => profileMap.set(p.userId, p));
@@ -41,7 +59,14 @@ export function StudentsDirectory() {
       const mergedStudents: any[] = userList.map(u => {
         const profile = profileMap.get(u.uid);
         if (profile) {
-          return { ...profile, id: profile.id || u.uid, userId: u.uid, fullName: profile.fullName || (u as any).name || '', role: (u as any).role, isBlocked: (u as any).isBlocked };
+          return { 
+            ...profile, 
+            id: profile.id || u.uid, 
+            userId: u.uid, 
+            fullName: profile.fullName || (u as any).name || '', 
+            role: (u as any).role, 
+            isBlocked: (u as any).isBlocked 
+          };
         } else {
           return {
             id: u.uid,
@@ -74,7 +99,7 @@ export function StudentsDirectory() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [userRole]);
 
   const triggerDelete = (id: string) => {
     if (!id) {
@@ -113,11 +138,30 @@ export function StudentsDirectory() {
     }
   };
 
-  const filteredStudents = students.filter(s => 
-    s.fullName?.toLowerCase().includes(search.toLowerCase()) ||
-    s.nisn?.includes(search) ||
-    s.osnField?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      // Access constraint based on admin role
+      if (userRole === UserRole.ADMIN_SOS && s.role !== UserRole.SOS) return false;
+      if (userRole === UserRole.ADMIN_STUDENT && s.role !== UserRole.STUDENT) return false;
+
+      // Management / General Admin filter (Default SOS, can be ALL or STUDENT)
+      if (!isRoleLocked && roleFilter !== 'ALL') {
+        if (s.role !== roleFilter) return false;
+      }
+
+      // Search query
+      if (search.trim()) {
+        const queryText = search.toLowerCase();
+        const matchName = (s.fullName || '').toLowerCase().includes(queryText);
+        const matchNisn = (s.nisn || '').includes(queryText);
+        const matchField = (s.osnField || '').toLowerCase().includes(queryText);
+        const matchGrade = (s.grade || '').toLowerCase().includes(queryText);
+        return matchName || matchNisn || matchField || matchGrade;
+      }
+
+      return true;
+    });
+  }, [students, userRole, roleFilter, isRoleLocked, search]);
 
   const handleSaveStudent = async (data: Partial<Student>) => {
     if (!editingStudent) return;
@@ -138,7 +182,7 @@ export function StudentsDirectory() {
     }
 
     const headers = [
-      'Nama Lengkap', 'NISN', 'Kelas', 'Bidang OSN', 'NIK', 'Agama', 'Tempat Lahir', 'Tanggal Lahir', 'Kebutuhan Khusus', 'Buta Warna', 'Berat Badan (Kg)', 'Tinggi Badan (Cm)',
+      'Role Siswa', 'Nama Lengkap', 'NISN', 'Kelas', 'Bidang (OSN / Minat)', 'NIK', 'Agama', 'Tempat Lahir', 'Tanggal Lahir', 'Kebutuhan Khusus', 'Buta Warna', 'Berat Badan (Kg)', 'Tinggi Badan (Cm)',
       'Email Aktif', 'Email Semesta', 'No HP/WA', 
       'Alamat Singkat', 'No Rumah', 'RT/RW', 'Kode Pos',
       'Jalan (Lengkap)', 'Nomor (Lengkap)', 'RT/RW (Lengkap)', 'Kelurahan', 'Kecamatan', 'Kota/Kabupaten', 'Provinsi', 'Kode Pos (Lengkap)',
@@ -156,6 +200,7 @@ export function StudentsDirectory() {
     };
 
     const rows = filteredStudents.map(s => [
+      formatField(s.role === UserRole.SOS ? 'SOS' : 'Siswa Reguler'),
       formatField(s.fullName),
       formatField(s.nisn),
       formatField(s.grade),
@@ -211,26 +256,20 @@ export function StudentsDirectory() {
     document.body.removeChild(link);
   };
 
-  const canEdit = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
+  const canEdit = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Manajemen Pengguna</h1>
-          <p className="text-muted-foreground">Pangkalan data seluruh pengguna (siswa & manajemen) semesta olympiad squad.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Manajemen Siswa</h1>
+          <p className="text-muted-foreground">
+            {userRole === UserRole.ADMIN_SOS && "Pangkalan data khusus siswa Squad SOS."}
+            {userRole === UserRole.ADMIN_STUDENT && "Pangkalan data khusus siswa Reguler."}
+            {(userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN) && "Pangkalan data seluruh siswa (SOS dan Siswa Reguler)."}
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Cari nama, NISN, atau bidang..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={handleExportCSV}>
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
@@ -238,16 +277,56 @@ export function StudentsDirectory() {
         </div>
       </div>
 
+      {/* Role Filter & Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-card p-4 rounded-lg border">
+        <div className="flex flex-wrap items-center gap-3">
+          {!isRoleLocked ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Sortir Role:</span>
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Pilih Role Siswa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>
+                  <SelectItem value="ALL">Semua Siswa (All)</SelectItem>
+                  <SelectItem value="STUDENT">Hanya Siswa Reguler</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <Badge className={userRole === UserRole.ADMIN_SOS ? "bg-purple-100 text-purple-800 border-purple-200 py-1 px-3 text-xs" : "bg-blue-100 text-blue-800 border-blue-200 py-1 px-3 text-xs"}>
+              {userRole === UserRole.ADMIN_SOS ? "Admin SOS: Khusus Siswa SOS" : "Admin Siswa: Khusus Siswa Reguler"}
+            </Badge>
+          )}
+
+          <span className="text-xs text-muted-foreground">
+            Total {filteredStudents.length} siswa ditemukan
+          </span>
+        </div>
+
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Cari nama, NISN, atau bidang..."
+            className="pl-8"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
       <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Role</TableHead>
               <TableHead>Nama Lengkap</TableHead>
               <TableHead>NISN</TableHead>
               <TableHead>Kelas</TableHead>
-              <TableHead>Bidang OSN</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Bidang (OSN / Minat)</TableHead>
+              <TableHead>Status Akun</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -255,55 +334,67 @@ export function StudentsDirectory() {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center">
-                  Memuat data...
+                  Memuat data siswa...
                 </TableCell>
               </TableRow>
             ) : filteredStudents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
-                  Tidak ada data siswa yang ditemukan.
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                  Tidak ada data siswa yang sesuai filter.
                 </TableCell>
               </TableRow>
             ) : (
               filteredStudents.map((s) => (
                 <TableRow key={s.id || s.userId}>
+                  <TableCell>
+                    {s.role === UserRole.SOS ? (
+                      <Badge className="bg-purple-100 text-purple-800 border-purple-200">SOS</Badge>
+                    ) : (
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200">Siswa Reguler</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium">{s.fullName || '-'}</TableCell>
                   <TableCell>{s.nisn || '-'}</TableCell>
                   <TableCell>{s.grade || '-'}</TableCell>
                   <TableCell>{s.osnField || '-'}</TableCell>
-                  <TableCell>{s.role === UserRole.MANAGEMENT ? 'Management' : 'Student'}</TableCell>
                   <TableCell>
-                    {s.isBlocked ? (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">Diblokir</span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Aktif</span>
-                    )}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                      {s.isBlocked ? 'Diblokir' : 'Aktif'}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      {userRole === UserRole.ADMIN && (
+                    <div className="flex justify-end gap-1">
+                      {canEdit && (
                         <Button 
-                          variant="outline" 
+                          variant="ghost" 
+                          size="icon" 
+                          title="Edit Lengkap (God Mode)"
+                          onClick={() => setEditingStudent(s)}
+                        >
+                          <Pencil className="h-4 w-4 text-blue-600" />
+                        </Button>
+                      )}
+                      {(userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN) && (
+                        <Button 
+                          variant="ghost" 
                           size="sm" 
-                          className={s.isBlocked ? "text-green-600" : "text-red-600"}
+                          className={`text-xs ${s.isBlocked ? 'text-green-600' : 'text-orange-600'}`}
                           onClick={() => handleToggleBlock(s.userId, s.isBlocked)}
                         >
                           {s.isBlocked ? 'Buka Blokir' : 'Blokir'}
                         </Button>
                       )}
                       {canEdit && (
-                        <Button variant="outline" size="sm" onClick={() => setEditingStudent(s)}>
-                          <Pencil className="w-4 h-4 mr-2" />
-                          Edit
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-red-500 hover:text-red-700" 
+                          title="Hapus Siswa"
+                          onClick={() => triggerDelete(s.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
-                      {userRole === UserRole.MANAGEMENT && (
-                        <Button variant="outline" size="sm" onClick={() => triggerDelete(s.id)} className="text-red-500 hover:text-red-700">
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </Button>
-                      )}
-                      {!canEdit && <Button variant="outline" size="sm">Lihat Detail</Button>}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -313,24 +404,26 @@ export function StudentsDirectory() {
         </Table>
       </div>
 
+      {/* Dialog Edit God-Mode */}
       <Dialog open={!!editingStudent} onOpenChange={(open) => !open && setEditingStudent(null)}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Profil Siswa (God Mode)</DialogTitle>
+            <DialogTitle>Edit Profil Siswa (God Mode Admin)</DialogTitle>
           </DialogHeader>
           {editingStudent && (
             <StudentProfileForm 
-              initialData={editingStudent}
-              studentId={editingStudent.id}
-              onSave={handleSaveStudent}
+              initialData={editingStudent} 
+              studentId={editingStudent.id} 
+              onSave={handleSaveStudent} 
             />
           )}
         </DialogContent>
       </Dialog>
+
       <ConfirmDeleteDialog 
         isOpen={!!deletingStudentId} 
         onClose={() => setDeletingStudentId(null)} 
-        onConfirm={confirmDelete}
+        onConfirm={confirmDelete} 
         isLoading={isDeleting}
       />
     </div>

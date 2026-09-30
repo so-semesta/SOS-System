@@ -8,7 +8,7 @@
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "teacher", "student"] },
+        "role": { "type": "string", "enum": ["ADMIN", "TEACHER", "STUDENT", "SOS", "ADMIN_SOS", "ADMIN_STUDENT", "MANAGEMENT", "admin", "teacher", "student", "sos", "admin_sos", "admin_student", "management"] },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },

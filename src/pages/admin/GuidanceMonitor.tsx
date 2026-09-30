@@ -50,24 +50,40 @@ export function GuidanceMonitor() {
   const [showAllLogs, setShowAllLogs] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN;
+  // Role segregation & Sortir
+  const initialRoleFilter = userRole === UserRole.ADMIN_STUDENT ? 'STUDENT' : 'SOS';
+  const [roleFilter, setRoleFilter] = useState<string>(initialRoleFilter);
+  const [userRolesMap, setUserRolesMap] = useState<Map<string, string>>(new Map());
+  const isRoleLocked = userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
+
+  const isManagement = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
 
   const fetchData = async (fetchAll: boolean = false) => {
     try {
       const logsData = await getAllGuidanceLogs(fetchAll ? undefined : 300);
       setLogs(logsData);
 
-      const usersQuery = query(collection(db, 'users'), where('role', '==', 'STUDENT'));
+      let rolesToFetch = [UserRole.SOS, UserRole.STUDENT];
+      if (userRole === UserRole.ADMIN_SOS) rolesToFetch = [UserRole.SOS];
+      if (userRole === UserRole.ADMIN_STUDENT) rolesToFetch = [UserRole.STUDENT];
+
+      const usersQuery = query(collection(db, 'users'), where('role', 'in', rolesToFetch));
       const usersSnap = await getDocs(usersQuery);
       const studentMap = new Map<string, any>();
+      const rMap = new Map<string, string>();
+
       usersSnap.docs.forEach(doc => {
+        const uRole = doc.data().role || UserRole.SOS;
+        rMap.set(doc.id, uRole);
         studentMap.set(doc.id, {
           id: doc.id,
           userId: doc.id,
           fullName: doc.data().name || doc.data().email || 'Unknown',
+          role: uRole,
           grade: 'Active'
         });
       });
+      setUserRolesMap(rMap);
       setStudents(Array.from(studentMap.values()) as any);
     } catch (error) {
       toast.error('Gagal mengambil data monitoring guidance');
@@ -79,7 +95,7 @@ export function GuidanceMonitor() {
 
   useEffect(() => {
     fetchData(showAllLogs);
-  }, [showAllLogs]);
+  }, [showAllLogs, userRole]);
 
   const triggerDelete = (id: string) => {
     if(!id) {
@@ -105,7 +121,18 @@ export function GuidanceMonitor() {
   };
 
   const filteredLogs = logs.filter((l) => {
-    const matchesSearch = l.studentName?.toLowerCase().includes(search.toLowerCase()) ||
+    const studentRole = userRolesMap.get(l.studentId) || UserRole.SOS;
+
+    // Role access based on admin role
+    if (userRole === UserRole.ADMIN_SOS && studentRole !== UserRole.SOS) return false;
+    if (userRole === UserRole.ADMIN_STUDENT && studentRole !== UserRole.STUDENT) return false;
+
+    // Sortir for Management/Admin (Default SOS, or ALL or STUDENT)
+    if (!isRoleLocked && roleFilter !== 'ALL') {
+      if (studentRole !== roleFilter) return false;
+    }
+
+    const matchesSearch = (l.studentName?.toLowerCase() || '').includes(search.toLowerCase()) ||
       l.academicSubject.toLowerCase().includes(search.toLowerCase());
     const matchesStudent = selectedStudentFilter === 'ALL' || l.studentId === selectedStudentFilter;
     return matchesSearch && matchesStudent;
@@ -191,8 +218,25 @@ export function GuidanceMonitor() {
               : 'Pantau laporan harian jurnal akademik siswa.'}
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <div className="relative w-full sm:w-64">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+          {!isRoleLocked ? (
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Sortir Role Siswa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>
+                <SelectItem value="ALL">Semua Siswa</SelectItem>
+                <SelectItem value="STUDENT">Hanya Siswa Reguler</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge className={userRole === UserRole.ADMIN_SOS ? "bg-purple-100 text-purple-800 border-purple-200 py-1 px-3 text-xs" : "bg-blue-100 text-blue-800 border-blue-200 py-1 px-3 text-xs"}>
+              {userRole === UserRole.ADMIN_SOS ? "Admin SOS: Khusus Siswa SOS" : "Admin Siswa: Khusus Siswa Reguler"}
+            </Badge>
+          )}
+
+          <div className="relative w-full sm:w-56">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
@@ -202,12 +246,10 @@ export function GuidanceMonitor() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {(userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) && (
-            <Button variant="outline" onClick={handleExportCSV}>
-              <Download className="w-4 h-4 mr-2" />
-              Ekspor CSV
-            </Button>
-          )}
+          <Button variant="outline" onClick={handleExportCSV}>
+            <Download className="w-4 h-4 mr-2" />
+            Ekspor CSV
+          </Button>
         </div>
       </div>
 
@@ -262,6 +304,7 @@ export function GuidanceMonitor() {
           <TableHeader>
             <TableRow>
               <TableHead>Tanggal</TableHead>
+              <TableHead>Role</TableHead>
               <TableHead>Nama Siswa</TableHead>
               <TableHead>Mata Pelajaran</TableHead>
               <TableHead className="w-1/3">Progress Akademik</TableHead>
@@ -280,14 +323,14 @@ export function GuidanceMonitor() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={isManagement ? 10 : 4} className="h-24 text-center">
+                <TableCell colSpan={isManagement ? 11 : 5} className="h-24 text-center">
                   Memuat data monitoring...
                 </TableCell>
               </TableRow>
             ) : filteredLogs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isManagement ? 10 : 4} className="h-24 text-center">
-                  Tidak ada data yang ditemukan.
+                <TableCell colSpan={isManagement ? 11 : 5} className="h-24 text-center text-muted-foreground">
+                  Tidak ada data yang ditemukan pada kategori ini.
                 </TableCell>
               </TableRow>
             ) : (
@@ -295,6 +338,13 @@ export function GuidanceMonitor() {
                 <TableRow key={log.id} className={isManagement && (log.mood === Mood.BAD || log.mood === Mood.TERRIBLE) ? 'bg-red-50/30' : ''}>
                   <TableCell className="whitespace-nowrap">
                     {new Date(log.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </TableCell>
+                  <TableCell>
+                    {(userRolesMap.get(log.studentId) || UserRole.SOS) === UserRole.SOS ? (
+                      <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">SOS</Badge>
+                    ) : (
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Siswa</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-semibold">{log.studentName || 'Siswa'}</TableCell>
                   <TableCell>{log.academicSubject}</TableCell>

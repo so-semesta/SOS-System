@@ -47,7 +47,8 @@ type FormValues = z.infer<typeof formSchema>;
 
 export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => void, initialData?: Competition | null }) {
   const { userRole, currentUser } = useAuth();
-  const isAdminOrManagement = userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT;
+  const isAdminOrManagement = userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
+  const isRegularStudent = userRole === UserRole.STUDENT;
   
   const [submitting, setSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -276,7 +277,7 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
           date: new Date(r.date).getTime(),
         })),
         proposedByUserId: initialData?.proposedByUserId || currentUser?.uid,
-        isApproved: isAdminOrManagement ? true : (initialData?.isApproved ?? false), // Admin/Mgmt auto approves or overrides, normal user keeps it pending
+        isApproved: (isAdminOrManagement || isRegularStudent) ? true : (initialData?.isApproved ?? false), // Admin/Mgmt and regular students auto approved without admin approval, SOS kept pending for approval
         createdAt: initialData ? initialData.createdAt : Date.now(),
         updatedAt: Date.now()
       };

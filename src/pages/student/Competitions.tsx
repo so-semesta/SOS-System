@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { UserRole } from '../../types/auth';
 import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations, updateRegistrationStatus, getArchivedCompetitionById } from '../../services/competitionService';
 import { getStudentProfile } from '../../services/studentService';
 import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student } from '../../types';
@@ -282,21 +283,34 @@ export function Competitions() {
       }
 
       // No conflict or forced, proceed
+      const isRegularStudent = userProfile?.role === UserRole.STUDENT;
+      const initialStatus = isRegularStudent ? RegistrationStatus.APPROVED : RegistrationStatus.PENDING;
       const newRegId = `reg_${Date.now()}`;
       const newRegistration = {
         studentId: currentUser.uid,
         studentName: userProfile?.name || 'Siswa',
         competitionId: selectedComp.id,
         competitionTitle: selectedComp.title,
-        status: RegistrationStatus.PENDING,
+        status: initialStatus,
         isRegisteredDirectly,
+        notes: isRegularStudent 
+          ? (isRegisteredDirectly ? 'Pendaftaran Mandiri (Auto-Approved)' : 'Minta Bantuan Sekolah - Harap Hubungi Wali Kelas (Auto-Approved)')
+          : undefined,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
       console.log('Sending payload:', newRegId, newRegistration);
       await applyForCompetition(newRegId, newRegistration as any);
 
-      toast.success('Pengajuan perizinan berhasil dikirim!');
+      if (isRegularStudent) {
+        if (!isRegisteredDirectly) {
+          toast.success('Pendaftaran lomba berhasil disetujui otomatis. Harap segera hubungi Wali Kelas untuk bantuan sekolah!', { duration: 6000 });
+        } else {
+          toast.success('Pendaftaran lomba mandiri berhasil dan langsung disetujui!');
+        }
+      } else {
+        toast.success('Pengajuan perizinan berhasil dikirim!');
+      }
       setSelectedComp(null);
       setConflictCompTitle(null);
       loadData(); // Reload registrations
@@ -430,6 +444,19 @@ export function Competitions() {
         </TabsList>
 
         <TabsContent value="katalog" className="space-y-6">
+          {userProfile?.role === UserRole.STUDENT && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3 text-amber-900 shadow-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="font-semibold text-sm">Pemberitahuan Pendaftaran Lomba (Role Siswa)</h4>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                  Pendaftaran lomba Anda bersifat <strong>langsung disetujui otomatis</strong> tanpa memerlukan approval Management/Admin.
+                  <br />
+                  <span className="font-medium text-amber-950">⚠️ Peringatan Penting:</span> Jika Anda meminta atau membutuhkan bantuan dari pihak sekolah (seperti pembiayaan pendaftaran, pembimbingan guru, akomodasi, fasilitas, atau surat perizinan/dispensasi), Anda <strong>HARUS menghubungi Wali Kelas</strong> Anda masing-masing.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -754,7 +781,7 @@ export function Competitions() {
                     setIsLateRegistration(isDeadlinePassed);
                     setShowRegistrationCheck(true);
                   }} disabled={isApplying} className="w-full sm:w-auto">
-                    {isApplying ? 'Mengajukan...' : 'Ajukan Perizinan'}
+                    {isApplying ? 'Memproses...' : (userProfile?.role === UserRole.STUDENT ? 'Daftar Lomba (Langsung Disetujui)' : 'Ajukan Perizinan')}
                   </Button>
                 );
               })()}
@@ -917,6 +944,14 @@ export function Competitions() {
             <DialogTitle>{isLateRegistration ? "Peringatan Batas Waktu" : "Konfirmasi Pendaftaran"}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
+            {userProfile?.role === UserRole.STUDENT && (
+              <div className="bg-amber-50 border border-amber-300 rounded-md p-3 mb-4 text-xs text-amber-900 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <strong>Pemberitahuan Siswa:</strong> Pengajuan ini langsung disetujui (tanpa approval Admin). Namun, jika Anda meminta bantuan pihak sekolah (biaya/dispensasi/pembimbingan), Anda <strong>HARUS menghubungi Wali Kelas</strong> Anda.
+                </div>
+              </div>
+            )}
             <p className="text-sm mb-4">
               {isLateRegistration 
                 ? "Masa pendaftaran resmi untuk lomba ini sudah lewat. Apakah Anda sudah mengisi formulir pendaftaran perlombaan secara langsung ke pihak penyelenggara?"
@@ -927,7 +962,10 @@ export function Competitions() {
                 setShowRegistrationCheck(false);
                 handleApply(false, true); 
                }} className="w-full h-auto py-3 whitespace-normal text-left bg-green-600 hover:bg-green-700">
-                Saya melakukan pendaftaran secara mandiri
+                <div>
+                  <div className="font-semibold">Saya melakukan pendaftaran secara mandiri</div>
+                  <div className="text-xs text-green-100 mt-0.5">Sudah / akan mendaftar dan membayar sendiri ke penyelenggara</div>
+                </div>
               </Button>
               {isLateRegistration ? (
                  <Button variant="outline" onClick={() => setShowRegistrationCheck(false)} className="w-full h-auto py-3 whitespace-normal text-left text-red-600 border-red-200 hover:bg-red-50">
@@ -937,8 +975,15 @@ export function Competitions() {
                  <Button variant="outline" onClick={() => {
                    setShowRegistrationCheck(false);
                    handleApply(false, false);
-                 }} className="w-full h-auto py-3 whitespace-normal text-left text-blue-600 border-blue-200 hover:bg-blue-50">
-                   Saya ingin minta bantuan sekolah
+                 }} className="w-full h-auto py-3 whitespace-normal text-left text-blue-700 border-blue-200 hover:bg-blue-50">
+                   <div>
+                     <div className="font-semibold">Saya ingin minta bantuan sekolah</div>
+                     <div className="text-xs text-blue-600 mt-0.5">
+                       {userProfile?.role === UserRole.STUDENT 
+                         ? "⚠️ Harap segera hubungi Wali Kelas Anda setelah pendaftaran ini!" 
+                         : "Pendaftaran akan diverifikasi dan diproses oleh sekolah"}
+                     </div>
+                   </div>
                  </Button>
               )}
             </div>

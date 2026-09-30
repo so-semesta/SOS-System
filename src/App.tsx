@@ -50,8 +50,8 @@ export default function App() {
               <Route path="/home" element={<InternalHome />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               
-              {/* STUDENT ROUTES */}
-              <Route element={<ProtectedRoute allowedRoles={[UserRole.STUDENT]} />}>
+              {/* STUDENT & SOS ROUTES */}
+              <Route element={<ProtectedRoute allowedRoles={[UserRole.SOS, UserRole.STUDENT]} />}>
                 <Route path="/profile" element={<MyProfile />} />
                 <Route path="/competitions" element={<Competitions />} />
                 <Route path="/guidance" element={<Guidance />} />
@@ -60,7 +60,7 @@ export default function App() {
               </Route>
 
               {/* ADMIN & MANAGEMENT ROUTES */}
-              <Route element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.MANAGEMENT]} />}>
+              <Route element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT]} />}>
                 <Route path="/analytics" element={<Dashboard />} />
                 <Route path="/admin/students" element={<StudentsDirectory />} />
                 <Route path="/admin/competitions" element={<CompetitionsAdmin />} />

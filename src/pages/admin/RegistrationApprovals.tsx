@@ -3,6 +3,9 @@ import { useAuth } from '../../context/AuthContext';
 import { getAllRegistrations, updateRegistrationStatus, updateRegistration, getCompetitionById, getAllCompetitions, applyForCompetition } from '../../services/competitionService';
 import { getStudentProfile, getAllStudents } from '../../services/studentService';
 import { Registration, RegistrationStatus, Competition, CompetitionStatus, Student, RoundChecklist, MedalType } from '../../types';
+import { UserRole } from '../../types/auth';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -22,6 +25,12 @@ export function RegistrationApprovals() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [competitionFilter, setCompetitionFilter] = useState<string>('ALL');
+  
+  // Role segregation and Sortir
+  const initialRoleFilter = userRole === UserRole.ADMIN_STUDENT ? 'STUDENT' : 'SOS';
+  const [roleFilter, setRoleFilter] = useState<string>(initialRoleFilter);
+  const [userRolesMap, setUserRolesMap] = useState<Map<string, string>>(new Map());
+  const isRoleLocked = userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
   
   const [selectedReg, setSelectedReg] = useState<Registration | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -96,10 +105,16 @@ export function RegistrationApprovals() {
 
   const loadData = async () => {
     try {
-      const [regsData, compsData] = await Promise.all([
+      const [regsData, compsData, usersSnap] = await Promise.all([
         getAllRegistrations(),
-        getAllCompetitions()
+        getAllCompetitions(),
+        getDocs(query(collection(db, 'users')))
       ]);
+      const roleMap = new Map<string, string>();
+      usersSnap.docs.forEach(d => {
+        roleMap.set(d.id, d.data().role || UserRole.SOS);
+      });
+      setUserRolesMap(roleMap);
       setRegistrations(regsData);
       setCompetitions(compsData);
     } catch (error) {
@@ -213,13 +228,24 @@ export function RegistrationApprovals() {
   const filteredRegs = useMemo(() => {
     return registrations.filter(
       (r) => {
+        const studentRole = userRolesMap.get(r.studentId) || UserRole.SOS;
+
+        // Role access based on admin role
+        if (userRole === UserRole.ADMIN_SOS && studentRole !== UserRole.SOS) return false;
+        if (userRole === UserRole.ADMIN_STUDENT && studentRole !== UserRole.STUDENT) return false;
+
+        // Sortir for Management/Admin (Default SOS, or ALL or STUDENT)
+        if (!isRoleLocked && roleFilter !== 'ALL') {
+          if (studentRole !== roleFilter) return false;
+        }
+
         const matchesSearch = (r.studentName?.toLowerCase() || '').includes(search.toLowerCase()) || 
                               r.competitionTitle.toLowerCase().includes(search.toLowerCase());
         const matchesComp = competitionFilter === 'ALL' || r.competitionId === competitionFilter;
         return matchesSearch && matchesComp;
       }
     );
-  }, [registrations, search, competitionFilter]);
+  }, [registrations, search, competitionFilter, userRolesMap, userRole, roleFilter, isRoleLocked]);
 
   const handleExportCSV = () => {
     if (filteredRegs.length === 0) {
@@ -264,9 +290,26 @@ export function RegistrationApprovals() {
           <h1 className="text-3xl font-bold tracking-tight">Perizinan Lomba</h1>
           <p className="text-muted-foreground">Review dan setujui pengajuan perizinan lomba dari siswa.</p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+          {!isRoleLocked ? (
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Sortir Role Siswa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>
+                <SelectItem value="ALL">Semua Siswa</SelectItem>
+                <SelectItem value="STUDENT">Hanya Siswa Reguler</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge className={userRole === UserRole.ADMIN_SOS ? "bg-purple-100 text-purple-800 border-purple-200 py-1 px-3 text-xs" : "bg-blue-100 text-blue-800 border-blue-200 py-1 px-3 text-xs"}>
+              {userRole === UserRole.ADMIN_SOS ? "Admin SOS: Khusus Siswa SOS" : "Admin Siswa: Khusus Siswa Reguler"}
+            </Badge>
+          )}
+
           <Select value={competitionFilter} onValueChange={setCompetitionFilter}>
-            <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Semua Lomba" />
             </SelectTrigger>
             <SelectContent>
@@ -276,10 +319,10 @@ export function RegistrationApprovals() {
               ))}
             </SelectContent>
           </Select>
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full sm:w-56">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Cari nama siswa atau lomba..."
+              placeholder="Cari siswa/lomba..."
               className="pl-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -289,12 +332,10 @@ export function RegistrationApprovals() {
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
           </Button>
-          {(userRole === 'ADMIN' || userRole === 'MANAGEMENT') && (
-            <Button onClick={openGodMode} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-              <UserPlus className="w-4 h-4 mr-2" />
-              God Mode: Tambah Siswa
-            </Button>
-          )}
+          <Button onClick={openGodMode} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            <UserPlus className="w-4 h-4 mr-2" />
+            Tambah Siswa
+          </Button>
         </div>
       </div>
 
@@ -303,6 +344,7 @@ export function RegistrationApprovals() {
           <TableHeader>
             <TableRow>
               <TableHead>Tgl Pengajuan</TableHead>
+              <TableHead>Role</TableHead>
               <TableHead>Nama Siswa</TableHead>
               <TableHead>Lomba / Kompetisi</TableHead>
               <TableHead>Status</TableHead>
@@ -312,17 +354,24 @@ export function RegistrationApprovals() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Memuat data perizinan...</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center">Memuat data perizinan...</TableCell>
               </TableRow>
             ) : filteredRegs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Tidak ada pengajuan perizinan.</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">Tidak ada pengajuan perizinan pada kategori ini.</TableCell>
               </TableRow>
             ) : (
               filteredRegs.map((reg) => (
                 <TableRow key={reg.id}>
                   <TableCell className="whitespace-nowrap">
                     {safeFormatDate(reg.createdAt, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </TableCell>
+                  <TableCell>
+                    {(userRolesMap.get(reg.studentId) || UserRole.SOS) === UserRole.SOS ? (
+                      <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">SOS</Badge>
+                    ) : (
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Siswa</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-medium">{reg.studentName || 'Siswa Tanpa Nama'}</TableCell>
                   <TableCell>{reg.competitionTitle}</TableCell>

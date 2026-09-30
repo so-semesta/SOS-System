@@ -26,23 +26,23 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
   const navItems = [
     // SEMUA ROLE
-    { name: 'Home', icon: CalendarDays, path: '/home', roles: [UserRole.STUDENT, UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Dashboard Analitik', icon: BarChart, path: '/analytics', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Leaderboard', icon: Trophy, path: '/leaderboard', roles: [UserRole.STUDENT, UserRole.ADMIN, UserRole.MANAGEMENT] },
+    { name: 'Home', icon: CalendarDays, path: '/home', roles: [UserRole.SOS, UserRole.STUDENT, UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Dashboard Analitik', icon: BarChart, path: '/analytics', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Leaderboard', icon: Trophy, path: '/leaderboard', roles: [UserRole.SOS, UserRole.STUDENT, UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     
-    // STUDENT
-    { name: 'Profil Saya', icon: Users, path: '/profile', roles: [UserRole.STUDENT] },
-    { name: 'Lomba', icon: Trophy, path: '/competitions', roles: [UserRole.STUDENT] },
-    { name: 'Guidance', icon: BookOpen, path: '/guidance', roles: [UserRole.STUDENT] },
-    { name: 'OSN Corner', icon: GraduationCap, path: '/osn-corner', roles: [UserRole.STUDENT] },
-    { name: 'Classroom', icon: CalendarDays, path: '/classroom', roles: [UserRole.STUDENT] },
+    // STUDENT & SOS
+    { name: 'Profil Saya', icon: Users, path: '/profile', roles: [UserRole.SOS, UserRole.STUDENT] },
+    { name: 'Lomba', icon: Trophy, path: '/competitions', roles: [UserRole.SOS, UserRole.STUDENT] },
+    { name: 'Guidance', icon: BookOpen, path: '/guidance', roles: [UserRole.SOS, UserRole.STUDENT] },
+    { name: 'OSN Corner', icon: GraduationCap, path: '/osn-corner', roles: [UserRole.SOS, UserRole.STUDENT] },
+    { name: 'Classroom', icon: CalendarDays, path: '/classroom', roles: [UserRole.SOS, UserRole.STUDENT] },
 
     // ADMIN & MANAGEMENT
-    { name: 'Manajemen Siswa', icon: Users, path: '/admin/students', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Manajemen Lomba', icon: Trophy, path: '/admin/competitions', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Perizinan Lomba', icon: CalendarDays, path: '/admin/registrations', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Review Guidance', icon: BookOpen, path: '/admin/guidance', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
-    { name: 'Manajemen OSN', icon: GraduationCap, path: '/admin/osn', roles: [UserRole.ADMIN, UserRole.MANAGEMENT] },
+    { name: 'Manajemen Siswa', icon: Users, path: '/admin/students', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Manajemen Lomba', icon: Trophy, path: '/admin/competitions', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Perizinan Lomba', icon: CalendarDays, path: '/admin/registrations', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Review Guidance', icon: BookOpen, path: '/admin/guidance', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Manajemen OSN', icon: GraduationCap, path: '/admin/osn', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
 
     // MANAGEMENT ONLY
     { name: 'Manajemen User', icon: Settings, path: '/management/users', roles: [UserRole.MANAGEMENT] },
