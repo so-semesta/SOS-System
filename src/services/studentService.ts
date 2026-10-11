@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Student } from '../types';
+import { removeUndefined } from '../lib/utils';
 
 export const getStudentProfile = async (userId: string): Promise<Student | null> => {
   const q = query(collection(db, 'students'), where('userId', '==', userId));
@@ -49,9 +50,9 @@ export const getAllStudents = async (): Promise<Student[]> => {
 };
 
 export const createStudentProfile = async (studentId: string, data: Omit<Student, 'id'>) => {
-  await setDoc(doc(db, 'students', studentId), data);
+  await setDoc(doc(db, 'students', studentId), removeUndefined(data));
 };
 
 export const updateStudentProfile = async (studentId: string, data: Partial<Student>) => {
-  await updateDoc(doc(db, 'students', studentId), data);
+  await updateDoc(doc(db, 'students', studentId), removeUndefined(data));
 };

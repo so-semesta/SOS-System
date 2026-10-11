@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Checkbox } from '../../components/ui/checkbox';
 import { toast } from "sonner";
 import { safeFormatDate } from "../../lib/utils";
-import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle, Clock } from 'lucide-react';
+import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle, Clock, Info } from 'lucide-react';
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
@@ -283,9 +283,12 @@ export function Competitions() {
       }
 
       // No conflict or forced, proceed
-      const isRegularStudent = userProfile?.role === UserRole.STUDENT;
-      const initialStatus = isRegularStudent ? RegistrationStatus.APPROVED : RegistrationStatus.PENDING;
+      const initialStatus = RegistrationStatus.PENDING;
       const newRegId = `reg_${Date.now()}`;
+      const notesValue = isRegisteredDirectly 
+        ? 'Pendaftaran Mandiri' 
+        : 'Minta Bantuan Sekolah';
+
       const newRegistration = {
         studentId: currentUser.uid,
         studentName: userProfile?.name || 'Siswa',
@@ -293,23 +296,17 @@ export function Competitions() {
         competitionTitle: selectedComp.title,
         status: initialStatus,
         isRegisteredDirectly,
-        notes: isRegularStudent 
-          ? (isRegisteredDirectly ? 'Pendaftaran Mandiri (Auto-Approved)' : 'Minta Bantuan Sekolah - Harap Hubungi Wali Kelas (Auto-Approved)')
-          : undefined,
+        notes: notesValue,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
       console.log('Sending payload:', newRegId, newRegistration);
       await applyForCompetition(newRegId, newRegistration as any);
 
-      if (isRegularStudent) {
-        if (!isRegisteredDirectly) {
-          toast.success('Pendaftaran lomba berhasil disetujui otomatis. Harap segera hubungi Wali Kelas untuk bantuan sekolah!', { duration: 6000 });
-        } else {
-          toast.success('Pendaftaran lomba mandiri berhasil dan langsung disetujui!');
-        }
+      if (isRegisteredDirectly) {
+        toast.success('Pengajuan pendaftaran mandiri berhasil dikirim! Menunggu persetujuan Admin/Manajemen.');
       } else {
-        toast.success('Pengajuan perizinan berhasil dikirim!');
+        toast.success('Pengajuan perizinan & bantuan sekolah berhasil dikirim! Menunggu persetujuan Admin/Manajemen.');
       }
       setSelectedComp(null);
       setConflictCompTitle(null);
@@ -444,15 +441,15 @@ export function Competitions() {
         </TabsList>
 
         <TabsContent value="katalog" className="space-y-6">
-          {userProfile?.role === UserRole.STUDENT && (
-            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3 text-amber-900 shadow-sm">
-              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          {(userProfile?.role === UserRole.STUDENT || userProfile?.role === UserRole.SOS) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 text-blue-900 shadow-sm">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
               <div>
-                <h4 className="font-semibold text-sm">Pemberitahuan Pendaftaran Lomba (Role Siswa)</h4>
-                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                  Pendaftaran lomba Anda bersifat <strong>langsung disetujui otomatis</strong> tanpa memerlukan approval Management/Admin.
+                <h4 className="font-semibold text-sm">Alur Perizinan & Pendaftaran Lomba</h4>
+                <p className="text-xs text-blue-800 mt-1 leading-relaxed">
+                  Setelah Anda mengajukan lomba, status pengajuan akan <strong>menunggu persetujuan (PENDING)</strong> dari Admin / Manajemen.
                   <br />
-                  <span className="font-medium text-amber-950">⚠️ Peringatan Penting:</span> Jika Anda meminta atau membutuhkan bantuan dari pihak sekolah (seperti pembiayaan pendaftaran, pembimbingan guru, akomodasi, fasilitas, atau surat perizinan/dispensasi), Anda <strong>HARUS menghubungi Wali Kelas</strong> Anda masing-masing.
+                  Jika Anda memilih bantuan sekolah, pastikan juga untuk berkoordinasi dengan Wali Kelas atau Koordinator Lomba.
                 </p>
               </div>
             </div>
@@ -944,11 +941,11 @@ export function Competitions() {
             <DialogTitle>{isLateRegistration ? "Peringatan Batas Waktu" : "Konfirmasi Pendaftaran"}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            {userProfile?.role === UserRole.STUDENT && (
-              <div className="bg-amber-50 border border-amber-300 rounded-md p-3 mb-4 text-xs text-amber-900 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            {(userProfile?.role === UserRole.STUDENT || userProfile?.role === UserRole.SOS) && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4 text-xs text-blue-900 flex items-start gap-2">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
                 <div>
-                  <strong>Pemberitahuan Siswa:</strong> Pengajuan ini langsung disetujui (tanpa approval Admin). Namun, jika Anda meminta bantuan pihak sekolah (biaya/dispensasi/pembimbingan), Anda <strong>HARUS menghubungi Wali Kelas</strong> Anda.
+                  <strong>Informasi Alur:</strong> Pengajuan perizinan ini akan berstatus <strong>PENDING</strong> dan diteruskan ke Admin / Manajemen untuk ditinjau dan disetujui.
                 </div>
               </div>
             )}
@@ -979,9 +976,7 @@ export function Competitions() {
                    <div>
                      <div className="font-semibold">Saya ingin minta bantuan sekolah</div>
                      <div className="text-xs text-blue-600 mt-0.5">
-                       {userProfile?.role === UserRole.STUDENT 
-                         ? "⚠️ Harap segera hubungi Wali Kelas Anda setelah pendaftaran ini!" 
-                         : "Pendaftaran akan diverifikasi dan diproses oleh sekolah"}
+                       Pendaftaran akan diverifikasi dan diproses oleh Admin / Manajemen sekolah
                      </div>
                    </div>
                  </Button>

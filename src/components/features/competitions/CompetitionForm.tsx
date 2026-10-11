@@ -189,12 +189,13 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
 
   const handleGenerateAI = async () => {
     if (!selectedFile) {
-      toast.error('Silakan pilih file poster terlebih dahulu');
+      toast.info('Silakan pilih file poster terlebih dahulu');
+      fileInputRef.current?.click();
       return;
     }
 
     setIsGenerating(true);
-    toast.info('AI sedang mengekstrak data dari poster...');
+    toast.info('AI sedang menganalisis poster lomba...');
 
     try {
       const base64Data = await getCompressedBase64(selectedFile);
@@ -209,8 +210,11 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Gagal membaca poster');
+        const errorData = await response.json().catch(() => ({}));
+        const errObj: any = new Error(errorData.error || 'Gagal membaca poster');
+        errObj.code = errorData.code;
+        errObj.status = response.status;
+        throw errObj;
       }
 
       const parsedData = await response.json();
@@ -225,7 +229,7 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
       form.setValue('field', mappedFields);
       form.setValue('type', parsedData.type === 'Luring' ? 'Luring' : parsedData.type === 'Hybrid' ? 'Hybrid' : 'Daring');
       if (parsedData.registrationDeadline) form.setValue('registrationDeadline', parsedData.registrationDeadline);
-      form.setValue('fee', parsedData.fee || 0);
+      form.setValue('fee', typeof parsedData.fee === 'number' ? parsedData.fee : 0);
       form.setValue('location', parsedData.location || '');
       form.setValue('description', parsedData.description || '');
       
@@ -239,10 +243,31 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
         });
       }
 
-      toast.success('Data berhasil diekstrak! Silakan review kembali isian form.');
+      toast.success('Informasi poster berhasil diekstrak otomatis! Silakan periksa formulir.');
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Gagal mengekstrak data menggunakan AI');
+      console.warn("AI Poster Extraction Notice:", err.message);
+      const isRecoverableError = 
+        err.code === 'PROJECT_DENIED_ACCESS' || 
+        err.code === 'CREDITS_DEPLETED' || 
+        err.status === 402 || 
+        err.status === 403 || 
+        err.message?.includes('denied access') || 
+        err.message?.includes('Saldo kredit') || 
+        err.message?.includes('habis');
+
+      if (isRecoverableError) {
+        toast.error(err.message || 'Koneksi AI mengalami pembatasan kuota/akses.', {
+          duration: 9000,
+          action: {
+            label: "Buka Bantuan AI",
+            onClick: () => setIsManualAiOpen(true)
+          }
+        });
+        // Buka dialog prompt manual otomatis agar pengguna tidak terhambat
+        setIsManualAiOpen(true);
+      } else {
+        toast.error(err.message || 'Gagal mengekstrak data menggunakan AI', { duration: 6000 });
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -336,15 +361,25 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
             )}
 
             
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button 
                 type="button" 
-                className="bg-purple-600/50 hover:bg-purple-600/50 text-white shadow-sm cursor-not-allowed"
-                disabled={true}
-                title="Fitur dinonaktifkan sementara karena limit API. Gunakan tombol Manual AI di sebelahnya."
+                onClick={handleGenerateAI}
+                disabled={isGenerating || submitting}
+                className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm cursor-pointer"
+                title="Ekstrak detail lomba secara otomatis dari gambar poster menggunakan AI"
               >
-                <Wand2 className="mr-2 h-4 w-4" />
-                Generate AI (Dinonaktifkan)
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Mengekstrak Poster...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Ekstrak Otomatis (AI)
+                  </>
+                )}
               </Button>
               
               <Dialog open={isManualAiOpen} onOpenChange={setIsManualAiOpen}>
@@ -354,9 +389,9 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>Isi Form via AI Eksternal (ChatGPT/Gemini/Claude)</DialogTitle>
+                    <DialogTitle>Bantuan Prompt AI Eksternal (Alternatif)</DialogTitle>
                     <DialogDescription>
-                      Karena API internal sedang mencapai batas, Anda bisa menggunakan AI pihak ketiga secara gratis untuk mengekstrak data poster.
+                      Jika ingin mengekstrak melalui antarmuka web ChatGPT, Claude, atau Gemini secara mandiri:
                     </DialogDescription>
                   </DialogHeader>
                   

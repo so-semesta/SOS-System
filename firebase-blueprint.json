@@ -115,6 +115,8 @@
         "competitionId": { "type": "string" },
         "competitionTitle": { "type": "string" },
         "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "notes": { "type": "string" },
+        "isRegisteredDirectly": { "type": "boolean" },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },

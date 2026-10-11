@@ -1,5 +1,5 @@
 import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { UserRole } from '../types/auth';
 
 /**
@@ -8,6 +8,11 @@ import { UserRole } from '../types/auth';
  */
 export async function migrateExistingStudentsToSos(): Promise<{ migratedCount: number }> {
   try {
+    // Only attempt if user is signed in
+    if (!auth.currentUser) {
+      return { migratedCount: 0 };
+    }
+
     const usersRef = collection(db, 'users');
     const q = query(usersRef, where('role', '==', 'STUDENT'));
     const snapshot = await getDocs(q);
@@ -39,7 +44,11 @@ export async function migrateExistingStudentsToSos(): Promise<{ migratedCount: n
     }
 
     return { migratedCount: count };
-  } catch (error) {
+  } catch (error: any) {
+    // If the logged-in user lacks admin privileges to list/batch-update all users, return silently
+    if (error?.code === 'permission-denied') {
+      return { migratedCount: 0 };
+    }
     console.error('Error migrating students to SOS:', error);
     return { migratedCount: 0 };
   }

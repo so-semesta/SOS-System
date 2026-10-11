@@ -82,7 +82,7 @@ export function RegistrationApprovals() {
       const newRegId = `reg_${Date.now()}_${student.userId}`;
       await applyForCompetition(newRegId, {
         studentId: student.userId,
-        studentName: student.fullName,
+        studentName: student.fullName || 'Siswa',
         competitionId: competition.id,
         competitionTitle: competition.title,
         status: RegistrationStatus.APPROVED, // auto approved

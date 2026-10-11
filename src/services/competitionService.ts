@@ -1,13 +1,14 @@
 import { collection, doc, getDoc, getDocs, setDoc, query, where, updateDoc, deleteDoc, getCountFromServer, writeBatch, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Competition, Registration, RegistrationStatus, CompetitionRound, RoundChecklist } from '../types';
+import { removeUndefined } from '../lib/utils';
 
 export const createCompetition = async (id: string, data: Omit<Competition, 'id'>) => {
-  await setDoc(doc(db, 'competitions', id), data);
+  await setDoc(doc(db, 'competitions', id), removeUndefined(data));
 };
 
 export const updateCompetition = async (id: string, data: Partial<Competition>) => {
-  await updateDoc(doc(db, 'competitions', id), data);
+  await updateDoc(doc(db, 'competitions', id), removeUndefined(data));
 };
 
 export const deleteCompetition = async (id: string) => {
@@ -102,7 +103,7 @@ export const getAllRegistrations = async (): Promise<Registration[]> => {
 };
 
 export const updateRegistration = async (registrationId: string, data: Partial<Registration>) => {
-  await updateDoc(doc(db, 'registrations', registrationId), data);
+  await updateDoc(doc(db, 'registrations', registrationId), removeUndefined(data));
 };
 
 export const updateRegistrationStatus = async (
@@ -118,7 +119,7 @@ export const updateRegistrationStatus = async (
   if (roundsChecklist !== undefined) updates.roundsChecklist = roundsChecklist;
   if (isRegisteredDirectly !== undefined) updates.isRegisteredDirectly = isRegisteredDirectly;
   
-  await updateDoc(doc(db, 'registrations', registrationId), updates);
+  await updateDoc(doc(db, 'registrations', registrationId), removeUndefined(updates));
 };
 
 /**
@@ -157,7 +158,7 @@ export const checkScheduleConflict = async (studentId: string, targetCompetition
 };
 
 export const applyForCompetition = async (registrationId: string, data: Omit<Registration, 'id'>) => {
-  await setDoc(doc(db, 'registrations', registrationId), data);
+  await setDoc(doc(db, 'registrations', registrationId), removeUndefined(data));
 };
 
 export const getPendingRegistrationsCount = async (): Promise<number> => {

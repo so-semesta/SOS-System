@@ -22,10 +22,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // In Vercel, environment variables are set in the Vercel dashboard.
-    const apiKey = (process.env.CUSTOM_GEMINI_KEY || process.env.GEMINI_API_KEY)?.trim();
+    const candidateKeys = [
+      process.env.CUSTOM_GEMINI_KEY,
+      process.env.GEMINI_API_KEY,
+      process.env.GOOGLE_API_KEY,
+    ].filter(Boolean).map(k => k!.trim());
+
+    const apiKey = candidateKeys.find(k => k.startsWith("AQ")) || candidateKeys[0];
 
     if (!apiKey) {
-      return res.status(500).json({ error: "GEMINI_API_KEY is not configured in the Vercel environment variables." });
+      return res.status(500).json({ error: "GEMINI_API_KEY is not configured in the environment variables." });
     }
 
     let cleanBase64 = base64Data;
@@ -33,11 +39,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cleanBase64 = base64Data.split(",")[1];
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ 
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const prompt = "Ekstrak informasi kompetisi/lomba dari poster ini. Balas HANYA dengan JSON mentah. Tanpa backticks, tanpa format markdown (```json). Langsung mulai dengan tanda { dan akhiri dengan }.";
     
     const aiResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.8-flash",
       contents: {
         parts: [
           { inlineData: { data: cleanBase64, mimeType: mimeType || "image/jpeg" } },
@@ -86,8 +99,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json(parsedData);
   } catch (err: any) {
-    console.error("GEMINI_ERROR:", err);
-    let errorMessage = err.message || "Gagal menghubungi Gemini API";
-    return res.status(500).json({ error: errorMessage });
+    let rawMessage = err?.message || String(err);
+    let errorMessage = rawMessage;
+    let statusCode = 500;
+    let errorCode = "GENERAL_ERROR";
+
+    console.warn("[Gemini API Provider Notice]:", rawMessage);
+
+    if (errorMessage.includes("denied access") || errorMessage.includes("Your project has been denied access")) {
+      statusCode = 403;
+      errorCode = "PROJECT_DENIED_ACCESS";
+      errorMessage = "Proyek Google AI Studio pada API Key ini sedang dibatasi (Error 403: Project denied access). Solusi: Di aistudio.google.com, klik 'Get API key' > 'Create API key in new project', lalu perbarui GEMINI_API_KEY di Secrets. Sementara itu, silakan gunakan tombol 'Isi Manual via AI Lain' untuk mengisi form secara instan.";
+    } else if (errorMessage.includes("prepayment credits are depleted") || errorMessage.includes("402")) {
+      statusCode = 402;
+      errorCode = "CREDITS_DEPLETED";
+      errorMessage = "Saldo kredit API Key Gemini (Prepay) telah habis. Silakan perbarui GEMINI_API_KEY dengan API Key aktif Anda di panel Secrets AI Studio, atau gunakan tombol 'Isi Manual via AI Lain'.";
+    } else if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("Quota")) {
+      statusCode = 429;
+      errorCode = "RATE_LIMITED";
+      errorMessage = "Batas kuota API Gemini tercapai (Error 429: Resource Exhausted). Silakan coba lagi beberapa saat atau gunakan 'Isi Manual via AI Lain'.";
+    }
+    
+    return res.status(statusCode).json({ error: errorMessage, code: errorCode });
   }
 }

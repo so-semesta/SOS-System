@@ -114,10 +114,14 @@ service cloud.firestore {
                        (incoming().role in ['STUDENT', 'SOS', 'TEACHER', 'student', 'sos', 'teacher'] || 
                         ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management', 'ADMIN_SOS', 'admin_sos', 'ADMIN_STUDENT', 'admin_student']) && isSuperAdmin()));
       
-      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email / super admin).
+      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email / super admin, or migrating from STUDENT to SOS).
       allow update: if isSignedIn() && isValidUserProfile(incoming()) && (
         isAdmin() || 
-        (isOwner(userId) && (!('role' in incoming()) || incoming().role == existing().role)) ||
+        (isOwner(userId) && (
+          !('role' in incoming()) || 
+          incoming().role == existing().role ||
+          (existing().role in ['STUDENT', 'student'] && incoming().role in ['SOS', 'sos'])
+        )) ||
         (isOwner(userId) && isSuperAdmin())
       );
       
@@ -167,10 +171,10 @@ service cloud.firestore {
       // RELAXED FOR LEADERBOARD: All logged-in users can list registrations.
       allow list: if isSignedIn();
       
-      // Students can register themselves (status PENDING or APPROVED for regular students). Admins can do anything.
+      // Students can register themselves with status PENDING. Admins can create with any status.
       allow create: if isSignedIn() && isValidId(registrationId) && 
                        isValidRegistration(incoming()) && 
-                       (isAdmin() || (incoming().studentId == request.auth.uid && incoming().status in ['PENDING', 'APPROVED']));
+                       (isAdmin() || (incoming().studentId == request.auth.uid && incoming().status == 'PENDING'));
                        
       // Students can't approve themselves
       allow update: if isSignedIn() && isValidId(registrationId) && 

@@ -1,9 +1,10 @@
 import { collection, doc, getDocs, setDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { GuidanceLog } from '../types';
+import { removeUndefined } from '../lib/utils';
 
 export const createGuidanceLog = async (logId: string, data: Omit<GuidanceLog, 'id'>) => {
-  await setDoc(doc(db, 'guidanceLogs', logId), data);
+  await setDoc(doc(db, 'guidanceLogs', logId), removeUndefined(data));
 };
 
 export const getStudentGuidanceLogs = async (studentId: string): Promise<GuidanceLog[]> => {

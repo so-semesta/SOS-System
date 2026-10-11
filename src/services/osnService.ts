@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, deleteDoc, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { OsnAnnouncement, OsnBankSoal } from '../types';
+import { removeUndefined } from '../lib/utils';
 
 export const getOsnAnnouncements = async (): Promise<OsnAnnouncement[]> => {
   const q = query(collection(db, 'osn_announcements'));
@@ -9,11 +10,11 @@ export const getOsnAnnouncements = async (): Promise<OsnAnnouncement[]> => {
 };
 
 export const addOsnAnnouncement = async (data: Omit<OsnAnnouncement, 'id'>) => {
-  await addDoc(collection(db, 'osn_announcements'), data);
+  await addDoc(collection(db, 'osn_announcements'), removeUndefined(data));
 };
 
 export const updateOsnAnnouncement = async (id: string, data: Partial<OsnAnnouncement>) => {
-  await updateDoc(doc(db, 'osn_announcements', id), data);
+  await updateDoc(doc(db, 'osn_announcements', id), removeUndefined(data));
 };
 
 export const deleteOsnAnnouncement = async (id: string) => {
@@ -27,11 +28,11 @@ export const getOsnBankSoal = async (): Promise<OsnBankSoal[]> => {
 };
 
 export const addOsnBankSoal = async (data: Omit<OsnBankSoal, 'id'>) => {
-  await addDoc(collection(db, 'osn_banksoal'), data);
+  await addDoc(collection(db, 'osn_banksoal'), removeUndefined(data));
 };
 
 export const updateOsnBankSoal = async (id: string, data: Partial<OsnBankSoal>) => {
-  await updateDoc(doc(db, 'osn_banksoal', id), data);
+  await updateDoc(doc(db, 'osn_banksoal', id), removeUndefined(data));
 };
 
 export const deleteOsnBankSoal = async (id: string) => {

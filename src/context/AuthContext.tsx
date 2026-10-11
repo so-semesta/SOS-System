@@ -30,9 +30,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Run migration for existing student accounts to SOS
-    migrateExistingStudentsToSos().catch(err => console.error("Migration error:", err));
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         if (!user.email?.endsWith('@semesta.sch.id')) {
@@ -72,6 +69,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 } catch (e) {
                   console.error("Failed to auto-upgrade to management:", e);
                 }
+              }
+
+              const isAdminUser = isMasterEmail || [UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.ADMIN_SOS].includes(data.role);
+              if (isAdminUser) {
+                // Safely trigger migration in background if admin
+                migrateExistingStudentsToSos().catch(() => {});
               } else if (data.role === UserRole.STUDENT && !data.isNewStudent) {
                 // Migrate existing student to SOS
                 data.role = UserRole.SOS;

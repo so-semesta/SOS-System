@@ -1,6 +1,7 @@
 import { collection, doc, getDocs, setDoc, query, orderBy, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Achievement, CurationColor, MedalType } from '../types';
+import { removeUndefined } from '../lib/utils';
 
 export const calculateAchievementPoints = (curationColor: CurationColor | undefined, medalType: MedalType): number => {
   const pointsMap = {
@@ -52,7 +53,7 @@ export const calculateAchievementPoints = (curationColor: CurationColor | undefi
 
 export const addAchievement = async (data: Omit<Achievement, 'id'>) => {
   const id = `ach_${Date.now()}`;
-  await setDoc(doc(db, 'achievements', id), { ...data, id });
+  await setDoc(doc(db, 'achievements', id), removeUndefined({ ...data, id }));
   return id;
 };
 
