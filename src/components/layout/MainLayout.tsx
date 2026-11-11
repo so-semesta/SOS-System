@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { Outlet } from 'react-router-dom';
 import { TimerWidget } from './TimerWidget';
+import { StudentDailyReminderDialog } from '../reminders/StudentDailyReminderDialog';
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -17,6 +18,8 @@ export function MainLayout() {
         </main>
       </div>
       <TimerWidget />
+      <StudentDailyReminderDialog />
     </div>
   );
 }
+

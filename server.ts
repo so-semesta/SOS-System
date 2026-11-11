@@ -3,6 +3,13 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
+import {
+  loadEmailConfig,
+  saveEmailConfig,
+  createTransporter,
+  generateHtmlEmail,
+} from "./serverEmail";
 
 dotenv.config();
 
@@ -148,6 +155,286 @@ async function startServer() {
       return res.status(statusCode).json({ error: errorMessage, code: errorCode });
     }
   });
+
+  // --- AUTOMATED EMAIL REMINDER API ROUTES ---
+
+  // 1. Get Email Configuration (sanitized, hides real password)
+  app.get("/api/notifications/email-config", (req, res) => {
+    try {
+      const config = loadEmailConfig();
+      res.json({
+        smtpHost: config.smtpHost,
+        smtpPort: config.smtpPort,
+        smtpSecure: config.smtpSecure,
+        smtpUser: config.smtpUser,
+        fromName: config.fromName,
+        fromEmail: config.fromEmail,
+        autoScheduleEnabled: config.autoScheduleEnabled,
+        autoScheduleTime: config.autoScheduleTime,
+        lastAutoSentDate: config.lastAutoSentDate,
+        lastAutoSentCount: config.lastAutoSentCount,
+        hasStoredPassword: Boolean(config.smtpPass && config.smtpPass.length > 0),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Gagal membaca konfigurasi email" });
+    }
+  });
+
+  // 2. Save Email Configuration
+  app.post("/api/notifications/email-config", (req, res) => {
+    try {
+      const updated = saveEmailConfig(req.body);
+      res.json({
+        smtpHost: updated.smtpHost,
+        smtpPort: updated.smtpPort,
+        smtpSecure: updated.smtpSecure,
+        smtpUser: updated.smtpUser,
+        fromName: updated.fromName,
+        fromEmail: updated.fromEmail,
+        autoScheduleEnabled: updated.autoScheduleEnabled,
+        autoScheduleTime: updated.autoScheduleTime,
+        lastAutoSentDate: updated.lastAutoSentDate,
+        lastAutoSentCount: updated.lastAutoSentCount,
+        hasStoredPassword: Boolean(updated.smtpPass && updated.smtpPass.length > 0),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Gagal menyimpan konfigurasi email" });
+    }
+  });
+
+  // 3. Test Email Connection
+  app.post("/api/notifications/test-connection", async (req, res) => {
+    try {
+      const config = loadEmailConfig();
+      const testRecipient = req.body.testRecipient || config.fromEmail;
+
+      if (!config.smtpUser || !config.smtpPass) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Kredensial SMTP belum lengkap. Mohon isi Email Pengirim dan Google App Password (16 digit) terlebih dahulu di pengaturan.",
+        });
+      }
+
+      const transporter = createTransporter(config);
+      if (!transporter) {
+        return res.status(400).json({ success: false, message: "Gagal membuat koneksi SMTP." });
+      }
+
+      await transporter.verify();
+
+      await transporter.sendMail({
+        from: `"${config.fromName}" <${config.fromEmail}>`,
+        to: testRecipient,
+        subject: "[TEST SOS] Uji Koneksi Email Otomatis Semesta",
+        text: "Koneksi email otomatis sistem Semesta Olympiad Squad (SOS) berhasil terhubung!",
+        html: `
+          <div style="font-family: sans-serif; padding: 24px; border: 1px solid #6366f1; border-radius: 10px; max-width: 500px; background-color: #faf5ff;">
+            <h2 style="color: #4338ca; margin-top: 0;">Uji Koneksi Email Berhasil! ✅</h2>
+            <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+              Sistem SOS Semesta telah berhasil terhubung ke server SMTP <strong>${config.smtpHost}</strong> menggunakan akun <strong>${config.smtpUser}</strong>.
+            </p>
+            <p style="color: #475569; font-size: 13px;">
+              Email pengingat jurnal harian & agenda pekan ini kini siap dikirimkan secara langsung dan otomatis ke email siswa tanpa perlu membuka mailto.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e0e7ff; margin: 16px 0;" />
+            <span style="font-size: 11px; color: #64748b;">Semesta Olympiad Squad • SMP-SMA Semesta</span>
+          </div>
+        `,
+      });
+
+      return res.json({
+        success: true,
+        message: `Koneksi SMTP sukses! Email uji coba berhasil dikirim ke ${testRecipient}.`,
+      });
+    } catch (err: any) {
+      console.error("[Test Connection Error]:", err);
+      let errorMsg = err.message || "Gagal menghubungi server SMTP";
+      if (errorMsg.includes("Invalid login") || errorMsg.includes("535") || errorMsg.includes("BadCredentials")) {
+        errorMsg =
+          "Login SMTP gagal (Username/Password salah). Untuk akun Google / Google Workspace (@semesta.sch.id), gunakan 16-digit Google App Password (bukan kata sandi akun biasa). Buka myaccount.google.com > Keamanan > Sandi Aplikasi.";
+      }
+      return res.status(500).json({
+        success: false,
+        error: errorMsg,
+      });
+    }
+  });
+
+  // 4. Send Direct Email Reminders from System
+  app.post("/api/notifications/send-email-reminders", async (req, res) => {
+    try {
+      const {
+        recipients,
+        subject,
+        reminderType = "REPORT",
+        customNote,
+        guidanceUrl = "https://sos.olympiad.my.id/guidance",
+        competitionsUrl = "https://sos.olympiad.my.id/competitions",
+        todayFormatted,
+        pembinaName,
+        agendaItems = [],
+      } = req.body;
+
+      if (!Array.isArray(recipients) || recipients.length === 0) {
+        return res.status(400).json({ error: "Daftar penerima email kosong." });
+      }
+
+      const config = loadEmailConfig();
+      let transporter = createTransporter(config);
+      let mode: "smtp" | "ethereal" = "smtp";
+      let testAccountUrl: string | undefined;
+
+      // If SMTP credentials not provided yet, use ethereal to preview rendered email
+      if (!transporter) {
+        mode = "ethereal";
+        const testAccount = await nodemailer.createTestAccount();
+        transporter = nodemailer.createTransport({
+          host: "smtp.ethereal.email",
+          port: 587,
+          secure: false,
+          auth: {
+            user: testAccount.user,
+            pass: testAccount.pass,
+          },
+        });
+      }
+
+      const details: Array<{ email: string; name: string; status: "sent" | "failed"; error?: string }> = [];
+      let sentCount = 0;
+      let failedCount = 0;
+
+      const isReport = reminderType === "REPORT";
+
+      for (const student of recipients) {
+        if (!student.email || !student.email.includes("@")) {
+          details.push({
+            email: student.email || "kosong",
+            name: student.fullName,
+            status: "failed",
+            error: "Alamat email tidak valid atau belum terdaftar",
+          });
+          failedCount++;
+          continue;
+        }
+
+        const studentHtml = generateHtmlEmail({
+          studentName: student.fullName,
+          reminderType,
+          guidanceUrl,
+          competitionsUrl,
+          todayFormatted: todayFormatted || "Hari Ini",
+          customNote,
+          pembinaName: pembinaName || config.fromName,
+          agendaItems,
+        });
+
+        const plainText = isReport
+          ? `Halo ${student.fullName},\n\nMengingatkan untuk mengisi Laporan Belajar Harian hari ini (${todayFormatted || "Hari Ini"}).\nSilakan isi melalui: ${guidanceUrl}\n\nSalam,\n${pembinaName || config.fromName} - SOS Semesta`
+          : `Halo ${student.fullName},\n\nBerikut agenda dan batas waktu kompetisi pekan ini.\nSilakan cek detail lomba di: ${competitionsUrl || guidanceUrl.replace(/\/guidance.*/, '') + '/competitions'}\n\nSalam,\n${pembinaName || config.fromName} - SOS Semesta`;
+
+        try {
+          const info = await transporter.sendMail({
+            from: `"${config.fromName}" <${config.fromEmail}>`,
+            to: student.email,
+            subject:
+              subject ||
+              (isReport
+                ? `[SOS Semesta] Pengingat Laporan Belajar (${todayFormatted})`
+                : `[SOS Semesta] Info & Agenda Lomba Pekan Ini`),
+            text: plainText,
+            html: studentHtml,
+          });
+
+          if (mode === "ethereal" && !testAccountUrl) {
+            testAccountUrl = nodemailer.getTestMessageUrl(info) || undefined;
+          }
+
+          details.push({
+            email: student.email,
+            name: student.fullName,
+            status: "sent",
+          });
+          sentCount++;
+        } catch (sendErr: any) {
+          console.error(`[Email Send Error to ${student.email}]:`, sendErr);
+          details.push({
+            email: student.email,
+            name: student.fullName,
+            status: "failed",
+            error: sendErr.message || "Gagal terkirim",
+          });
+          failedCount++;
+        }
+      }
+
+      // Update last sent date & count
+      const todayDateStr = new Date().toISOString().split("T")[0];
+      saveEmailConfig({
+        lastAutoSentDate: todayDateStr,
+        lastAutoSentCount: sentCount,
+      });
+
+      return res.json({
+        success: sentCount > 0,
+        total: recipients.length,
+        sentCount,
+        failedCount,
+        mode,
+        previewUrl: testAccountUrl,
+        message:
+          mode === "smtp"
+            ? `Berhasil mengirim ${sentCount} email otomatis langsung ke kotak masuk siswa!`
+            : `Mode Pratinjau Ethereal Aktif (${sentCount} email diproses). Konfigurasikan Google App Password akun scienceolympiad@semesta.sch.id di tab Pengaturan Email untuk pengiriman riil.`,
+        details,
+      });
+    } catch (err: any) {
+      console.error("[Send Email Reminders Error]:", err);
+      return res.status(500).json({ error: err.message || "Gagal memproses pengiriman email otomatis" });
+    }
+  });
+
+  // Automated background scheduler check (every 30 seconds)
+  setInterval(() => {
+    try {
+      const config = loadEmailConfig();
+      if (!config.autoScheduleEnabled) return;
+
+      const now = new Date();
+      const wibFormatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Jakarta",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const parts = wibFormatter.formatToParts(now);
+      const hour = parts.find(p => p.type === "hour")?.value;
+      const minute = parts.find(p => p.type === "minute")?.value;
+      const currentTimeWIB = `${hour}:${minute}`;
+
+      const todayWIBFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jakarta",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const todayDateWIB = todayWIBFormatter.format(now);
+
+      if (currentTimeWIB === config.autoScheduleTime && config.lastAutoSentDate !== todayDateWIB) {
+        console.log(`[Auto Scheduler] Daily reminder triggered at ${currentTimeWIB} WIB for ${todayDateWIB}`);
+        saveEmailConfig({
+          lastAutoSentDate: todayDateWIB,
+        });
+      }
+    } catch (schedErr) {
+      console.error("[Scheduler Error]:", schedErr);
+    }
+  }, 30000);
+
+  // Serve static assets from public folder
+  const publicPath = path.join(process.cwd(), "public");
+  app.use(express.static(publicPath));
+  app.use("/assets", express.static(path.join(publicPath, "assets")));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

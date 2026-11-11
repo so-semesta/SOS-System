@@ -33,3 +33,36 @@ export function removeUndefined<T>(val: T): T {
   }
   return cleaned as T;
 }
+
+/**
+ * Detects if a string is a raw system ID / Firebase UID (e.g. 2Pb0ULQhtbZpVvQeOJIU3dNEw)
+ */
+export function isRawId(str?: string | null): boolean {
+  if (!str) return false;
+  const s = str.trim();
+  // Typically 18-36 alphanumeric characters without spaces, or doc/log id prefixes like reg_ or gl_
+  return (/^[a-zA-Z0-9_-]{18,36}$/.test(s) && !s.includes(' ')) || /^(reg_|gl_|usr_|comp_)/.test(s);
+}
+
+/**
+ * Returns a human-friendly display name, preventing raw IDs or 'unknown' from leaking into the UI.
+ */
+export function getFriendlyDisplayName(
+  name?: string | null,
+  email?: string | null,
+  fallback = 'Siswa'
+): string {
+  if (name && name.trim() && !isRawId(name) && name.toLowerCase() !== 'unknown') {
+    return name.trim();
+  }
+  if (email && email.trim()) {
+    const handle = email.split('@')[0];
+    if (handle && !isRawId(handle)) {
+      return handle
+        .replace(/[._-]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+  }
+  return fallback;
+}
+

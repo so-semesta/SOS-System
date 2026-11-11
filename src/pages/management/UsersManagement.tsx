@@ -11,6 +11,8 @@ import { Trash2, Search, ArrowRightLeft, Users } from 'lucide-react';
 import { UserRole } from '../../types/auth';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { migrateExistingStudentsToSos } from '../../services/migrationService';
+import { getFriendlyDisplayName } from '../../lib/utils';
+
 
 export function UsersManagement() {
   const [users, setUsers] = useState<any[]>([]);
@@ -155,7 +157,14 @@ export function UsersManagement() {
           <span className="text-sm font-medium text-muted-foreground">Sortir Role:</span>
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Pilih Role" />
+              <SelectValue placeholder="Pilih Role">
+                {roleFilter === 'SOS' ? 'Hanya SOS (Default)' : 
+                 roleFilter === 'STUDENT' ? 'Hanya Siswa Reguler' :
+                 roleFilter === 'ADMIN_SOS' ? 'Hanya Admin SOS' :
+                 roleFilter === 'ADMIN_STUDENT' ? 'Hanya Admin Siswa' :
+                 roleFilter === 'ADMIN' ? 'Hanya Admin Umum' :
+                 roleFilter === 'MANAGEMENT' ? 'Hanya Management' : 'Semua Role (All)'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="SOS">Hanya SOS (Default)</SelectItem>
@@ -205,14 +214,21 @@ export function UsersManagement() {
               filteredUsers.map(u => (
                 <TableRow key={u.id}>
                   <TableCell className="font-mono text-xs">{u.email}</TableCell>
-                  <TableCell className="font-medium">{u.name || '-'}</TableCell>
+                  <TableCell className="font-medium">{getFriendlyDisplayName(u.name, u.email, '-')}</TableCell>
                   <TableCell>
                     {getRoleBadge(u.role)}
                   </TableCell>
                   <TableCell>
                     <Select value={u.role} onValueChange={(val) => handleRoleChange(u.id, val)}>
                       <SelectTrigger className="w-[180px]">
-                        <SelectValue />
+                        <SelectValue>
+                          {u.role === UserRole.SOS ? 'SOS (Siswa SOS)' :
+                           u.role === UserRole.STUDENT ? 'STUDENT (Siswa Reguler)' :
+                           u.role === UserRole.ADMIN_SOS ? 'ADMIN_SOS (Admin SOS)' :
+                           u.role === UserRole.ADMIN_STUDENT ? 'ADMIN_STUDENT (Admin Siswa)' :
+                           u.role === UserRole.ADMIN ? 'ADMIN (Admin Umum)' :
+                           u.role === UserRole.MANAGEMENT ? 'MANAGEMENT' : u.role}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={UserRole.SOS}>SOS (Siswa SOS)</SelectItem>

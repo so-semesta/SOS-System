@@ -234,6 +234,12 @@ service cloud.firestore {
                        
       allow delete: if isSignedIn() && isValidId(logId) && (isAdmin() || existing().studentId == request.auth.uid);
     }
+
+    // Device Permits (Public read for QR code verification; Admin/Management write)
+    match /devicePermits/{permitId} {
+      allow read: if true;
+      allow write: if isSignedIn() && isAdmin();
+    }
     
     // Test collection for offline checks
     match /test/connection {

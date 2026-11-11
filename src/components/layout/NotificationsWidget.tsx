@@ -7,12 +7,13 @@ import { Badge } from '../ui/badge';
 import { getAllCompetitions, getStudentRegistrations, getPendingRegistrationsCount } from '../../services/competitionService';
 import { getStudentGuidanceLogs, getTodayGuidanceLogs } from '../../services/guidanceService';
 import { getAllStudents } from '../../services/studentService';
+import { getStudentInAppNotifications } from '../../services/notificationService';
 import { CompetitionStatus, RegistrationStatus } from '../../types';
-import { UserRole } from '../../types/auth';
+import { UserRole, isStudentRole, isAdminRole } from '../../types/auth';
 
 export function NotificationsWidget() {
   const { currentUser, userRole } = useAuth();
-  const [notifications, setNotifications] = useState<{title: string, desc: string, type: string}[]>([]);
+  const [notifications, setNotifications] = useState<{title: string, desc: string, type: string, link?: string}[]>([]);
   const [open, setOpen] = useState(false);
 
   const fetchNotifications = async () => {
@@ -22,14 +23,25 @@ export function NotificationsWidget() {
       const today = new Date();
       today.setHours(0,0,0,0);
       
-      if (userRole === UserRole.STUDENT) {
-        // H-3 lomba
+      if (isStudentRole(userRole)) {
+        // 1. In-app broadcast notifications
+        const inAppNotifs = await getStudentInAppNotifications(currentUser.uid);
+        inAppNotifs.filter(n => !n.isRead).forEach(n => {
+          notifs.push({
+            title: n.title,
+            desc: n.message,
+            type: n.type === 'WARNING' ? 'warning' : 'alert',
+            link: n.link
+          });
+        });
+
+        // 2. H-3 lomba
         const regs = await getStudentRegistrations(currentUser.uid);
         const comps = await getAllCompetitions();
         regs.forEach(reg => {
           const comp = comps.find(c => c.id === reg.competitionId);
           if (comp && reg.status === RegistrationStatus.APPROVED) {
-            comp.rounds.forEach(r => {
+            comp.rounds?.forEach(r => {
               const rDate = new Date(r.date);
               const diffTime = rDate.getTime() - today.getTime();
               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -54,7 +66,7 @@ export function NotificationsWidget() {
           }
         });
         
-        // Daily checkin check
+        // 3. Daily checkin check
         const logs = await getStudentGuidanceLogs(currentUser.uid);
         const hasCheckedInToday = logs.some(log => {
           const logDate = new Date(log.date);
@@ -63,19 +75,21 @@ export function NotificationsWidget() {
         
         if (!hasCheckedInToday) {
           notifs.push({
-            title: 'Daily Checkin',
-            desc: 'Anda belum mengisi Daily Checkin hari ini.',
-            type: 'alert'
+            title: 'Daily Check-in Belum Diisi',
+            desc: 'Anda belum mengisi laporan belajar harian hari ini. Klik untuk mengisi.',
+            type: 'alert',
+            link: '/guidance'
           });
         }
-      } else if (userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN) {
+      } else if (isAdminRole(userRole)) {
         // Request perizinan
         const pendingCount = await getPendingRegistrationsCount();
         if (pendingCount > 0) {
           notifs.push({
             title: 'Permintaan Perizinan',
             desc: `Terdapat ${pendingCount} permintaan perizinan lomba yang menunggu persetujuan.`,
-            type: 'warning'
+            type: 'warning',
+            link: '/admin/registrations'
           });
         }
         
@@ -94,9 +108,10 @@ export function NotificationsWidget() {
         const notCheckedIn = allStudents.filter(s => !checkedInStudentIds.has(s.id));
         if (notCheckedIn.length > 0) {
           notifs.push({
-            title: 'Rekap Daily Checkin',
-            desc: `${notCheckedIn.length} siswa belum mengisi daily checkin hari ini.`,
-            type: 'info'
+            title: 'Rekap Daily Checkin Hari Ini',
+            desc: `${notCheckedIn.length} siswa belum mengisi laporan belajar hari ini.`,
+            type: 'info',
+            link: '/admin/guidance'
           });
         }
       }
@@ -105,6 +120,7 @@ export function NotificationsWidget() {
     }
     setNotifications(notifs);
   };
+
 
   useEffect(() => {
     if (open) {

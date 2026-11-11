@@ -27,6 +27,9 @@ import { UsersManagement } from './pages/management/UsersManagement';
 
 import { PublicHome } from './pages/PublicHome';
 import { InternalHome } from './pages/InternalHome';
+import { PublicPermitVerification } from './pages/public/PublicPermitVerification';
+import { StudentDevicePermit } from './pages/student/StudentDevicePermit';
+import { AdminDevicePermits } from './pages/admin/AdminDevicePermits';
 
 // Komponen helper agar Dashboard melakukan hal yang tepat berdasarkan role
 const RootRedirect = () => {
@@ -41,8 +44,12 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* PUBLIC ROUTES (TANPA LOGIN - AKSES QR CODE RESMI) */}
           <Route path="/" element={<PublicHome />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/permit/:id" element={<PublicPermitVerification />} />
+          <Route path="/permit" element={<PublicPermitVerification />} />
+          <Route path="/verify-device/:id" element={<PublicPermitVerification />} />
           
           <Route element={<ProtectedRoute />}>
             <Route element={<MainLayout />}>
@@ -57,6 +64,7 @@ export default function App() {
                 <Route path="/guidance" element={<Guidance />} />
                 <Route path="/osn-corner" element={<OSN />} />
                 <Route path="/classroom" element={<Classroom />} />
+                <Route path="/device-permit" element={<StudentDevicePermit />} />
               </Route>
 
               {/* ADMIN & MANAGEMENT ROUTES */}
@@ -67,6 +75,7 @@ export default function App() {
                 <Route path="/admin/registrations" element={<RegistrationApprovals />} />
                 <Route path="/admin/guidance" element={<GuidanceMonitor />} />
                 <Route path="/admin/osn" element={<OSN />} />
+                <Route path="/admin/device-permits" element={<AdminDevicePermits />} />
               </Route>
 
               {/* MANAGEMENT ONLY ROUTES */}

@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Search, Trash2, Download, BarChart2 } from 'lucide-react';
+import { Search, Trash2, Download, BarChart2, Bell, Mail } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { toast } from 'sonner';
@@ -17,6 +17,10 @@ import { db } from '../../lib/firebase';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { format } from 'date-fns';
+import { isRawId, getFriendlyDisplayName } from '../../lib/utils';
+import { AdminReminderBroadcastDialog } from '../../components/reminders/AdminReminderBroadcastDialog';
+
+
 
 const MOOD_EMOJIS = {
   [Mood.GREAT]: '🤩 Sangat Baik',
@@ -60,29 +64,87 @@ export function GuidanceMonitor() {
 
   const fetchData = async (fetchAll: boolean = false) => {
     try {
-      const logsData = await getAllGuidanceLogs(fetchAll ? undefined : 300);
+      const [logsData, allStudentsData, usersSnap] = await Promise.all([
+        getAllGuidanceLogs(fetchAll ? undefined : 300),
+        getAllStudents().catch(() => []),
+        getDocs(query(collection(db, 'users'))).catch(() => null)
+      ]);
       setLogs(logsData);
 
-      let rolesToFetch = [UserRole.SOS, UserRole.STUDENT];
-      if (userRole === UserRole.ADMIN_SOS) rolesToFetch = [UserRole.SOS];
-      if (userRole === UserRole.ADMIN_STUDENT) rolesToFetch = [UserRole.STUDENT];
-
-      const usersQuery = query(collection(db, 'users'), where('role', 'in', rolesToFetch));
-      const usersSnap = await getDocs(usersQuery);
-      const studentMap = new Map<string, any>();
       const rMap = new Map<string, string>();
+      const studentMap = new Map<string, any>();
 
-      usersSnap.docs.forEach(doc => {
-        const uRole = doc.data().role || UserRole.SOS;
-        rMap.set(doc.id, uRole);
-        studentMap.set(doc.id, {
-          id: doc.id,
-          userId: doc.id,
-          fullName: doc.data().name || doc.data().email || 'Unknown',
-          role: uRole,
-          grade: 'Active'
+      // 1. Process profiles from students collection (where real fullNames are stored)
+      allStudentsData.forEach(p => {
+        const key = p.userId || p.id;
+        const validName = p.fullName && !isRawId(p.fullName) ? p.fullName.trim() : '';
+        studentMap.set(key, {
+          id: p.id || key,
+          userId: key,
+          fullName: validName,
+          email: p.activeEmail || p.semestaEmail || '',
+          osnField: p.osnField || '',
+          role: UserRole.SOS,
+          grade: p.grade || 'Active'
         });
       });
+
+      // 2. Process users collection to determine roles & fallback names/emails
+      if (usersSnap) {
+        usersSnap.docs.forEach(doc => {
+          const uData = doc.data();
+          const uRole = uData.role || UserRole.SOS;
+          rMap.set(doc.id, uRole);
+
+          const existing = studentMap.get(doc.id);
+          const cleanName = getFriendlyDisplayName(
+            existing?.fullName || uData.name,
+            uData.email,
+            ''
+          );
+
+          studentMap.set(doc.id, {
+            id: doc.id,
+            userId: doc.id,
+            fullName: cleanName || existing?.fullName || '',
+            email: existing?.email || uData.email || '',
+            osnField: existing?.osnField || '',
+            role: uRole,
+            grade: existing?.grade || 'Active'
+          });
+        });
+      }
+
+
+      // 3. Process logs to ensure every student who submitted a log is in the student map
+      // and has their studentName extracted from log if not already known
+      logsData.forEach(log => {
+        if (!log.studentId) return;
+        const existing = studentMap.get(log.studentId);
+        const logNameValid = log.studentName && !isRawId(log.studentName) ? log.studentName.trim() : '';
+        if (!existing) {
+          studentMap.set(log.studentId, {
+            id: log.studentId,
+            userId: log.studentId,
+            fullName: logNameValid || 'Siswa',
+            role: rMap.get(log.studentId) || UserRole.SOS,
+            grade: 'Active'
+          });
+        } else if (!existing.fullName || isRawId(existing.fullName)) {
+          if (logNameValid) {
+            existing.fullName = logNameValid;
+          }
+        }
+      });
+
+      // Final pass: ensure absolutely no student in studentMap has an empty or raw ID name
+      let unnamedIndex = 1;
+      studentMap.forEach((val) => {
+        if (!val.fullName || isRawId(val.fullName)) {
+          val.fullName = `Siswa ${unnamedIndex++}`;
+        }
+      });
+
       setUserRolesMap(rMap);
       setStudents(Array.from(studentMap.values()) as any);
     } catch (error) {
@@ -155,9 +217,14 @@ export function GuidanceMonitor() {
     };
 
     const rows = filteredLogs.map(l => {
+      const studentName = getFriendlyDisplayName(
+        students.find(s => (s.userId || s.id) === l.studentId)?.fullName || l.studentName,
+        undefined,
+        'Siswa'
+      );
       const baseFields = [
         formatField(new Date(l.date).toLocaleDateString('id-ID')),
-        formatField(l.studentName || 'Siswa'),
+        formatField(studentName),
         formatField(l.academicSubject),
         formatField(l.studyProgress)
       ];
@@ -184,6 +251,43 @@ export function GuidanceMonitor() {
     document.body.removeChild(link);
   };
 
+  // Filter students for the dropdown based on current role filter
+  const dropdownStudents = useMemo(() => {
+    return students.filter(s => {
+      const studentRole = userRolesMap.get(s.userId || s.id) || (s as any).role || UserRole.SOS;
+      if (userRole === UserRole.ADMIN_SOS && studentRole !== UserRole.SOS) return false;
+      if (userRole === UserRole.ADMIN_STUDENT && studentRole !== UserRole.STUDENT) return false;
+      if (!isRoleLocked && roleFilter !== 'ALL') {
+        if (studentRole !== roleFilter) return false;
+      }
+      return true;
+    }).sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+  }, [students, userRolesMap, userRole, isRoleLocked, roleFilter]);
+
+  // Selected student label for the select trigger to guarantee no raw ID is ever shown
+  const selectedStudentLabel = useMemo(() => {
+    if (selectedStudentFilter === 'ALL') return 'Semua Siswa';
+    const found = students.find(s => (s.userId || s.id) === selectedStudentFilter);
+    if (found && found.fullName && !isRawId(found.fullName)) {
+      return found.fullName;
+    }
+    const matchingLog = logs.find(l => l.studentId === selectedStudentFilter);
+    if (matchingLog?.studentName && !isRawId(matchingLog.studentName)) {
+      return matchingLog.studentName;
+    }
+    return 'Semua Siswa';
+  }, [selectedStudentFilter, students, logs]);
+
+  // If role filter changes and currently selected student is not in the dropdown list, reset to ALL
+  useEffect(() => {
+    if (selectedStudentFilter !== 'ALL') {
+      const matches = dropdownStudents.some(s => (s.userId || s.id) === selectedStudentFilter);
+      if (!matches) {
+        setSelectedStudentFilter('ALL');
+      }
+    }
+  }, [roleFilter, dropdownStudents, selectedStudentFilter]);
+
   // Student specific chart data
   const chartData = useMemo(() => {
     const dataToProcess = selectedStudentFilter === 'ALL' 
@@ -207,6 +311,27 @@ export function GuidanceMonitor() {
     return Object.values(grouped);
   }, [logs, selectedStudentFilter]);
 
+  // List of students who haven't submitted a report today
+  const unsubmittedStudentsToday = useMemo(() => {
+    const today = new Date();
+    const checkedInStudentIds = new Set(
+      logs
+        .filter(l => new Date(l.date).toDateString() === today.toDateString())
+        .map(l => l.studentId)
+    );
+
+    return dropdownStudents
+      .filter(s => !checkedInStudentIds.has(s.userId || s.id))
+      .map(s => ({
+        id: s.id,
+        userId: s.userId || s.id,
+        fullName: s.fullName,
+        email: (s as any).email || '',
+        grade: s.grade,
+        osnField: (s as any).osnField
+      }));
+  }, [dropdownStudents, logs]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -219,10 +344,14 @@ export function GuidanceMonitor() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+          <AdminReminderBroadcastDialog unsubmittedStudents={unsubmittedStudentsToday} />
+
           {!isRoleLocked ? (
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Sortir Role Siswa" />
+                <SelectValue placeholder="Sortir Role Siswa">
+                  {roleFilter === 'SOS' ? 'Hanya Siswa SOS (Default)' : roleFilter === 'STUDENT' ? 'Hanya Siswa Reguler' : 'Semua Siswa'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>
@@ -253,6 +382,36 @@ export function GuidanceMonitor() {
         </div>
       </div>
 
+      {unsubmittedStudentsToday.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-700 dark:text-amber-300 shrink-0">
+              <Bell className="w-5 h-5 text-amber-600 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-sm text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                Pengingat Harian: {unsubmittedStudentsToday.length} Siswa Belum Mengisi Laporan Hari Ini
+              </h4>
+              <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                Kirim pengingat email massal, notifikasi in-app, atau broadcast WhatsApp beserta agenda perlombaan pekan ini.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0">
+            <AdminReminderBroadcastDialog
+              unsubmittedStudents={unsubmittedStudentsToday}
+              trigger={
+                <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white text-xs shadow-xs flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5" />
+                  Kirim Pengingat & Email ({unsubmittedStudentsToday.length} Siswa)
+                </Button>
+              }
+            />
+          </div>
+        </div>
+      )}
+
+
       {isManagement && (
         <Card className="mb-6">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -262,11 +421,13 @@ export function GuidanceMonitor() {
             </CardTitle>
             <Select value={selectedStudentFilter} onValueChange={setSelectedStudentFilter}>
               <SelectTrigger className="w-[250px]">
-                <SelectValue placeholder="Pilih Siswa" />
+                <SelectValue placeholder="Pilih Siswa">
+                  {selectedStudentLabel}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Semua Siswa</SelectItem>
-                {students.map(s => (
+                {dropdownStudents.map(s => (
                   <SelectItem key={s.userId || s.id} value={s.userId || s.id}>
                     {s.fullName}
                   </SelectItem>
@@ -346,7 +507,13 @@ export function GuidanceMonitor() {
                       <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Siswa</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-semibold">{log.studentName || 'Siswa'}</TableCell>
+                  <TableCell className="font-semibold">
+                    {getFriendlyDisplayName(
+                      students.find(s => (s.userId || s.id) === log.studentId)?.fullName || log.studentName,
+                      undefined,
+                      'Siswa'
+                    )}
+                  </TableCell>
                   <TableCell>{log.academicSubject}</TableCell>
                   <TableCell className="text-sm">
                     <p className="line-clamp-2" title={log.studyProgress}>{log.studyProgress}</p>

@@ -6,6 +6,8 @@ import { Student, Competition, Registration, MedalType } from '../../types';
 import { Trophy, Medal, Award, Crown } from 'lucide-react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
+import { getFriendlyDisplayName } from '../../lib/utils';
+
 
 interface LeaderboardEntry {
   student: Student;
@@ -59,7 +61,10 @@ export function Leaderboard() {
 
         const leaderboardData: LeaderboardEntry[] = uniqueStudents
           .map(student => ({
-            student,
+            student: {
+              ...student,
+              fullName: getFriendlyDisplayName(student.fullName, undefined, 'Siswa')
+            },
             totalPoints: pointsMap[student.userId] || 0,
             medals: medalsMap[student.userId] || { gold: 0, silver: 0, bronze: 0, hm: 0, participation: 0 },
           }))

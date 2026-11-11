@@ -14,6 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { toast } from 'sonner';
+import { getWeeklyAgenda, WeeklyAgendaSummary, formatIndonesianDate } from '../../services/agendaService';
+import { Calendar, CheckCircle2, AlertCircle, Clock, Trophy, BookOpen } from 'lucide-react';
+
 
 const GuidanceFormSchema = z.object({
   academicSubject: z.string().min(1, 'Mata Pelajaran wajib diisi'),
@@ -51,11 +54,17 @@ export function Guidance() {
     },
   });
 
+  const [weeklyAgenda, setWeeklyAgenda] = useState<WeeklyAgendaSummary | null>(null);
+
   const loadLogs = async () => {
     if (!currentUser) return;
     try {
-      const data = await getStudentGuidanceLogs(currentUser.uid);
+      const [data, agenda] = await Promise.all([
+        getStudentGuidanceLogs(currentUser.uid),
+        getWeeklyAgenda().catch(() => null)
+      ]);
       setLogs(data);
+      if (agenda) setWeeklyAgenda(agenda);
     } catch (error) {
       toast.error('Gagal memuat history guidance');
     } finally {
@@ -66,6 +75,13 @@ export function Guidance() {
   useEffect(() => {
     loadLogs();
   }, [currentUser]);
+
+  const today = new Date();
+  const todayFormatted = formatIndonesianDate(today);
+  const hasCheckedInToday = logs.some(log => {
+    const lDate = new Date(log.date);
+    return lDate.toDateString() === today.toDateString();
+  });
 
   const onSubmit = async (values: GuidanceFormValues) => {
     if (!currentUser) return;
@@ -97,11 +113,91 @@ export function Guidance() {
   };
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Daily Check-in & Guidance</h1>
         <p className="text-muted-foreground">Catat progress belajar dan kondisi emosional Anda hari ini secara private.</p>
       </div>
+
+      {/* Today's Status Banner */}
+      {hasCheckedInToday ? (
+        <div className="p-4 rounded-xl border border-green-200 bg-green-50/80 dark:bg-green-950/20 text-green-900 dark:text-green-200 flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+            <div>
+              <span className="font-bold text-sm block">Sudah Mengisi Laporan Hari Ini ({todayFormatted})</span>
+              <span>Terima kasih! Konsistensi belajar harian adalah kunci sukses persiapan OSN.</span>
+            </div>
+          </div>
+          <Badge className="bg-green-600 text-white font-normal px-2.5 py-1">Tercatat Hari Ini</Badge>
+        </div>
+      ) : (
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/25 text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 animate-pulse" />
+            <div>
+              <span className="font-bold text-sm block text-amber-950 dark:text-amber-100">
+                Belum Mengisi Laporan Belajar Hari Ini ({todayFormatted})
+              </span>
+              <span>Mohon luangkan 2 menit untuk mengisi form jurnal harian di bawah ini.</span>
+            </div>
+          </div>
+          <Badge className="bg-amber-500 text-white font-normal px-2.5 py-1">Belum Terisi</Badge>
+        </div>
+      )}
+
+      {/* Agenda & Perlombaan Pekan Ini Card */}
+      {weeklyAgenda && (
+        <Card className="border-indigo-100 dark:border-indigo-900/50 bg-linear-to-r from-indigo-50/40 via-background to-purple-50/30">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <CardTitle className="text-base flex items-center gap-2 text-indigo-950 dark:text-indigo-200">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+                Agenda & Perlombaan Pekan Ini
+              </CardTitle>
+              <Badge variant="outline" className="text-xs font-medium border-indigo-200 text-indigo-700 w-fit">
+                {weeklyAgenda.weekLabel}
+              </Badge>
+            </div>
+            <CardDescription className="text-xs">
+              Pantau jadwal batas pendaftaran dan babak kompetisi yang berlangsung pekan ini.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {weeklyAgenda.allEvents.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {weeklyAgenda.allEvents.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-lg border bg-card/90 shadow-2xs hover:border-indigo-300 transition-colors flex items-center justify-between text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${item.badgeColor}`}>
+                          {item.badge}
+                        </span>
+                        <span className="font-medium text-foreground">{item.competitionTitle || item.title}</span>
+                      </div>
+                      {item.description && (
+                        <p className="text-[11px] text-muted-foreground">{item.description}</p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0 ml-3 font-semibold text-indigo-600">
+                      {item.formattedDate}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-lg border border-dashed text-center text-xs text-muted-foreground">
+                <Trophy className="w-5 h-5 mx-auto text-muted-foreground/60 mb-1" />
+                <p className="font-medium">Tidak ada batas waktu perlombaan mendesak pekan ini.</p>
+                <p className="text-[11px]">Tetap fokus pada silabus materi dan latihan soal rutin.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -110,6 +206,7 @@ export function Guidance() {
         </CardHeader>
         <CardContent>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* JURNAL AKADEMIK (Left/Top) */}
               <div className="space-y-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800">

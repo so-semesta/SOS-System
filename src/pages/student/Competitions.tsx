@@ -466,7 +466,9 @@ export function Competitions() {
             </div>
             <Select value={fieldFilter} onValueChange={setFieldFilter}>
               <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Pilih Bidang" />
+                <SelectValue placeholder="Pilih Bidang">
+                  {fieldFilter === 'ALL' ? 'Semua Bidang' : fieldFilter}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {fields.map(f => (
@@ -478,10 +480,18 @@ export function Competitions() {
             </Select>
             <Select value={curationFilter} onValueChange={setCurationFilter}>
               <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Pilih Kurasi" />
+                <SelectValue placeholder="Pilih Kurasi">
+                  {curationFilter === 'ALL' ? 'Semua Kurasi' :
+                   curationFilter === CurationColor.GOLD ? 'Lembaga Negara (GOLD)' :
+                   curationFilter === CurationColor.GREEN ? 'Sangat Disarankan (Hijau)' :
+                   curationFilter === CurationColor.YELLOW ? 'Sangat Disarankan (Kuning)' :
+                   curationFilter === CurationColor.ORANGE ? 'Disarankan' :
+                   curationFilter === CurationColor.RED ? 'Tidak Disarankan' : curationFilter}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Semua Kurasi</SelectItem>
+                <SelectItem value={CurationColor.GOLD}>Lembaga Negara (GOLD)</SelectItem>
                 <SelectItem value={CurationColor.GREEN}>Sangat Disarankan (Hijau)</SelectItem>
                 <SelectItem value={CurationColor.YELLOW}>Sangat Disarankan (Kuning)</SelectItem>
                 <SelectItem value={CurationColor.ORANGE}>Disarankan</SelectItem>
@@ -490,7 +500,11 @@ export function Competitions() {
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Urutkan" />
+                <SelectValue placeholder="Urutkan">
+                  {sortBy === 'NEWEST' ? 'Input Terbaru' :
+                   sortBy === 'DEADLINE' ? 'Deadline Daftar' :
+                   sortBy === 'PRELIMINARY' ? 'Pelaksanaan Penyisihan' : sortBy}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="NEWEST">Input Terbaru</SelectItem>

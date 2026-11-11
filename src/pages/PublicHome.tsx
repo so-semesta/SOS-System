@@ -269,7 +269,9 @@ export function PublicHome() {
                 </div>
                 <Select value={selectedField} onValueChange={setSelectedField}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Semua Bidang" />
+                    <SelectValue placeholder="Semua Bidang">
+                      {selectedField === 'ALL' ? 'Semua Bidang' : selectedField}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {fields.map(field => (
@@ -279,7 +281,14 @@ export function PublicHome() {
                 </Select>
                 <Select value={selectedCuration} onValueChange={setSelectedCuration}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Semua Kurasi" />
+                    <SelectValue placeholder="Semua Kurasi">
+                      {selectedCuration === 'ALL' ? 'Semua Kurasi' :
+                       selectedCuration === CurationColor.GOLD ? 'Lembaga Negara (GOLD)' :
+                       selectedCuration === CurationColor.GREEN ? 'Sangat Disarankan (Hijau)' :
+                       selectedCuration === CurationColor.YELLOW ? 'Sangat Disarankan (Kuning)' :
+                       selectedCuration === CurationColor.ORANGE ? 'Disarankan' :
+                       selectedCuration === CurationColor.RED ? 'Tidak Disarankan' : selectedCuration}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Semua Kurasi</SelectItem>
@@ -292,7 +301,11 @@ export function PublicHome() {
                 </Select>
                 <Select value={sortBy} onValueChange={setSortBy}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Urutkan" />
+                    <SelectValue placeholder="Urutkan">
+                      {sortBy === 'NEWEST' ? 'Input Terbaru' :
+                       sortBy === 'DEADLINE' ? 'Deadline Daftar' :
+                       sortBy === 'PRELIMINARY' ? 'Pelaksanaan Penyisihan' : sortBy}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="NEWEST">Input Terbaru</SelectItem>

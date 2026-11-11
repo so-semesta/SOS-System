@@ -15,6 +15,8 @@ import { UserRole } from '../../types/auth';
 import { deleteDoc, doc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
+import { getFriendlyDisplayName } from '../../lib/utils';
+
 
 export function StudentsDirectory() {
   const { userRole } = useAuth();
@@ -58,12 +60,13 @@ export function StudentsDirectory() {
       // Merge
       const mergedStudents: any[] = userList.map(u => {
         const profile = profileMap.get(u.uid);
+        const cleanName = getFriendlyDisplayName(profile?.fullName || (u as any).name, (u as any).email, 'Belum isi profil');
         if (profile) {
           return { 
             ...profile, 
             id: profile.id || u.uid, 
             userId: u.uid, 
-            fullName: profile.fullName || (u as any).name || '', 
+            fullName: cleanName, 
             role: (u as any).role, 
             isBlocked: (u as any).isBlocked 
           };
@@ -71,7 +74,7 @@ export function StudentsDirectory() {
           return {
             id: u.uid,
             userId: u.uid,
-            fullName: (u as any).name || 'Belum isi profil',
+            fullName: cleanName,
             nisn: '',
             grade: '',
             osnField: '',
@@ -285,7 +288,9 @@ export function StudentsDirectory() {
               <span className="text-sm font-medium text-muted-foreground">Sortir Role:</span>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Pilih Role Siswa" />
+                  <SelectValue placeholder="Pilih Role Siswa">
+                    {roleFilter === 'SOS' ? 'Hanya Siswa SOS (Default)' : roleFilter === 'STUDENT' ? 'Hanya Siswa Reguler' : 'Semua Siswa (All)'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>

@@ -16,7 +16,8 @@ import { Checkbox } from '../../components/ui/checkbox';
 import { Switch } from '../../components/ui/switch';
 import { Search, CheckCircle2, XCircle, Eye, Download, UserPlus } from 'lucide-react';
 import { toast } from "sonner";
-import { safeFormatDate } from "../../lib/utils";
+import { safeFormatDate, isRawId, getFriendlyDisplayName } from "../../lib/utils";
+
 
 export function RegistrationApprovals() {
   const { userRole } = useAuth();
@@ -283,6 +284,26 @@ export function RegistrationApprovals() {
     document.body.removeChild(link);
   };
 
+  const selectedCompetitionLabel = useMemo(() => {
+    if (competitionFilter === 'ALL') return 'Semua Lomba';
+    const comp = competitions.find(c => c.id === competitionFilter);
+    return comp?.title || 'Semua Lomba';
+  }, [competitionFilter, competitions]);
+
+  const selectedGmStudentLabel = useMemo(() => {
+    if (!gmSelectedStudent) return '-- Pilih Siswa --';
+    const s = allStudents.find(st => (st.userId || st.id) === gmSelectedStudent);
+    if (!s) return '-- Pilih Siswa --';
+    const cleanName = getFriendlyDisplayName(s.fullName, undefined, 'Siswa');
+    return `${cleanName} (${s.grade || '-'}) - ${s.osnField || '-'}`;
+  }, [gmSelectedStudent, allStudents]);
+
+  const selectedGmCompLabel = useMemo(() => {
+    if (!gmSelectedCompetition) return '-- Pilih Lomba --';
+    const c = competitions.find(comp => comp.id === gmSelectedCompetition);
+    return c?.title || '-- Pilih Lomba --';
+  }, [gmSelectedCompetition, competitions]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -294,7 +315,9 @@ export function RegistrationApprovals() {
           {!isRoleLocked ? (
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Sortir Role Siswa" />
+                <SelectValue placeholder="Sortir Role Siswa">
+                  {roleFilter === 'SOS' ? 'Hanya Siswa SOS (Default)' : roleFilter === 'STUDENT' ? 'Hanya Siswa Reguler' : 'Semua Siswa'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="SOS">Hanya Siswa SOS (Default)</SelectItem>
@@ -310,7 +333,9 @@ export function RegistrationApprovals() {
 
           <Select value={competitionFilter} onValueChange={setCompetitionFilter}>
             <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Semua Lomba" />
+              <SelectValue placeholder="Semua Lomba">
+                {selectedCompetitionLabel}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Semua Lomba</SelectItem>
@@ -373,7 +398,7 @@ export function RegistrationApprovals() {
                       <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Siswa</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-medium">{reg.studentName || 'Siswa Tanpa Nama'}</TableCell>
+                  <TableCell className="font-medium">{getFriendlyDisplayName(reg.studentName, undefined, 'Siswa Tanpa Nama')}</TableCell>
                   <TableCell>{reg.competitionTitle}</TableCell>
                   <TableCell>
                     <Badge 
@@ -550,14 +575,19 @@ export function RegistrationApprovals() {
               <label className="text-sm font-medium">Pilih Siswa</label>
               <Select value={gmSelectedStudent} onValueChange={setGmSelectedStudent}>
                 <SelectTrigger>
-                  <SelectValue placeholder="-- Pilih Siswa --" />
+                  <SelectValue placeholder="-- Pilih Siswa --">
+                    {selectedGmStudentLabel}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {allStudents.map(s => (
-                    <SelectItem key={s.userId || s.id} value={s.userId || s.id}>
-                      {s.fullName} ({s.grade}) - {s.osnField}
-                    </SelectItem>
-                  ))}
+                  {allStudents.map(s => {
+                    const cleanName = getFriendlyDisplayName(s.fullName, undefined, 'Siswa');
+                    return (
+                      <SelectItem key={s.userId || s.id} value={s.userId || s.id}>
+                        {cleanName} ({s.grade || '-'}) - {s.osnField || '-'}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -566,7 +596,9 @@ export function RegistrationApprovals() {
               <label className="text-sm font-medium">Pilih Lomba Aktif</label>
               <Select value={gmSelectedCompetition} onValueChange={setGmSelectedCompetition}>
                 <SelectTrigger>
-                  <SelectValue placeholder="-- Pilih Lomba --" />
+                  <SelectValue placeholder="-- Pilih Lomba --">
+                    {selectedGmCompLabel}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {competitions
