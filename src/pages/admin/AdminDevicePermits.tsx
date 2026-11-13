@@ -61,9 +61,17 @@ import {
   RotateCcw,
   Link2,
   Loader2,
+  Download,
+  FileSpreadsheet,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { MacAddressGuideModal } from '../../components/stickers/MacAddressGuideModal';
 import { toast } from 'sonner';
+
+type PermitSortField = 'regNumber' | 'name' | 'unitGrade' | 'osnField' | 'deviceName' | 'deviceMac' | 'status';
+type SortDirection = 'asc' | 'desc';
 
 export function AdminDevicePermits() {
   const [permits, setPermits] = useState<DevicePermitStudent[]>([]);
@@ -72,6 +80,8 @@ export function AdminDevicePermits() {
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | PermitStatus>('ALL');
   const [selectedField, setSelectedField] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState<PermitSortField>('regNumber');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Modals & Preview States
   const [previewStudent, setPreviewStudent] = useState<DevicePermitStudent | null>(null);
@@ -196,9 +206,18 @@ export function AdminDevicePermits() {
     }
   };
 
-  // Filtered dataset
+  const handleToggleSort = (field: PermitSortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filtered & sorted dataset
   const filteredPermits = useMemo(() => {
-    return permits.filter(p => {
+    const filtered = permits.filter(p => {
       if (selectedUnit !== 'ALL' && p.unit !== selectedUnit) return false;
       if (selectedStatus !== 'ALL' && (p.status || 'APPROVED') !== selectedStatus) return false;
       if (selectedField !== 'ALL' && p.osnField !== selectedField) return false;
@@ -217,7 +236,209 @@ export function AdminDevicePermits() {
       }
       return true;
     });
-  }, [permits, selectedUnit, selectedStatus, selectedField, search]);
+
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'regNumber':
+          cmp = (a.regNumber || a.id).localeCompare(b.regNumber || b.id, 'id', { numeric: true, sensitivity: 'base' });
+          break;
+        case 'name':
+          cmp = a.name.localeCompare(b.name, 'id', { sensitivity: 'base' });
+          break;
+        case 'unitGrade': {
+          const unitCmp = a.unit.localeCompare(b.unit, 'id');
+          cmp = unitCmp !== 0
+            ? unitCmp
+            : (a.grade || '').localeCompare(b.grade || '', 'id', { numeric: true, sensitivity: 'base' });
+          break;
+        }
+        case 'osnField':
+          cmp = (a.osnField || '').localeCompare(b.osnField || '', 'id', { sensitivity: 'base' });
+          break;
+        case 'deviceName':
+          cmp = (a.deviceName || '').localeCompare(b.deviceName || '', 'id', { sensitivity: 'base' });
+          break;
+        case 'deviceMac': {
+          const macA = (a.deviceMac || a.deviceIp || '').trim();
+          const macB = (b.deviceMac || b.deviceIp || '').trim();
+          if (!macA && macB) return 1;
+          if (macA && !macB) return -1;
+          cmp = macA.localeCompare(macB, 'id', { sensitivity: 'base' });
+          break;
+        }
+        case 'status':
+          cmp = (a.status || 'APPROVED').localeCompare(b.status || 'APPROVED', 'id');
+          break;
+      }
+      if (cmp !== 0) return cmp * dir;
+      return (a.regNumber || a.id).localeCompare(b.regNumber || b.id, 'id', { numeric: true });
+    });
+  }, [permits, selectedUnit, selectedStatus, selectedField, search, sortField, sortDirection]);
+
+  const buildExportFileStamp = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const unitTag = selectedUnit === 'ALL' ? 'SemuaUnit' : selectedUnit;
+    const statusTag = selectedStatus === 'ALL' ? 'SemuaStatus' : selectedStatus;
+    return `${unitTag}_${statusTag}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  };
+
+  const getStatusExportLabel = (status?: PermitStatus) => {
+    const s = status || 'APPROVED';
+    if (s === 'APPROVED') return 'APPROVED';
+    if (s === 'DUE') return 'DUE (Habis)';
+    return 'REJECTED (Belum Ada Izin)';
+  };
+
+  const handleExportCsv = (rowsToExport: DevicePermitStudent[] = filteredPermits) => {
+    if (rowsToExport.length === 0) {
+      toast.error('Tidak ada data izin device untuk diekspor.');
+      return;
+    }
+
+    const headers = [
+      'No',
+      'No. Registrasi (TA)',
+      'Tahun Ajaran',
+      'Nama Lengkap Siswa',
+      'Jenis Kelamin',
+      'Unit',
+      'Kelas',
+      'Bidang OSN',
+      'Nama / Jenis Device',
+      'MAC Address / ID Unik',
+      'Status Izin',
+      'Masa Berlaku',
+      'Catatan',
+      'Link Verifikasi QR',
+    ];
+
+    const escapeCsv = (val: unknown) => {
+      const str = String(val ?? '').replace(/\r?\n/g, ' ').trim();
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const csvRows = rowsToExport.map((s, idx) =>
+      [
+        idx + 1,
+        s.regNumber || s.id,
+        s.academicYear || '2026/2027',
+        s.name,
+        s.gender === 'P' ? 'Perempuan' : 'Laki-laki',
+        s.unit,
+        s.grade,
+        `OSN ${s.osnField}`,
+        s.deviceName || '-',
+        s.deviceMac || s.deviceIp || '-',
+        getStatusExportLabel(s.status),
+        s.rules?.validityPeriod || 'Oktober 2026 - Mei 2027',
+        s.notes || '-',
+        getVerificationUrl(s),
+      ]
+        .map(escapeCsv)
+        .join(';')
+    );
+
+    const csvContent = '\uFEFF' + headers.map(escapeCsv).join(';') + '\n' + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Izin_Device_SOS_${buildExportFileStamp()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Berhasil mengekspor ${rowsToExport.length} data izin device ke CSV.`);
+  };
+
+  const handleExportExcel = (rowsToExport: DevicePermitStudent[] = filteredPermits) => {
+    if (rowsToExport.length === 0) {
+      toast.error('Tidak ada data izin device untuk diekspor.');
+      return;
+    }
+
+    const escapeHtml = (val: unknown) =>
+      String(val ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const tableRowsHtml = rowsToExport
+      .map((s, idx) => {
+        const macValue = s.deviceMac || s.deviceIp || '-';
+        return `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td style="mso-number-format:'\\@';font-weight:bold;">${escapeHtml(s.regNumber || s.id)}</td>
+            <td style="mso-number-format:'\\@';">${escapeHtml(s.academicYear || '2026/2027')}</td>
+            <td>${escapeHtml(s.name)}</td>
+            <td style="text-align:center;">${s.gender === 'P' ? 'Perempuan' : 'Laki-laki'}</td>
+            <td style="text-align:center;">${escapeHtml(s.unit)}</td>
+            <td style="mso-number-format:'\\@';text-align:center;">${escapeHtml(s.grade)}</td>
+            <td>${escapeHtml(`OSN ${s.osnField}`)}</td>
+            <td>${escapeHtml(s.deviceName || '-')}</td>
+            <td style="mso-number-format:'\\@';font-family:monospace;">${escapeHtml(macValue)}</td>
+            <td style="font-weight:bold;">${escapeHtml(getStatusExportLabel(s.status))}</td>
+            <td>${escapeHtml(s.rules?.validityPeriod || 'Oktober 2026 - Mei 2027')}</td>
+            <td>${escapeHtml(s.notes || '-')}</td>
+            <td>${escapeHtml(getVerificationUrl(s))}</td>
+          </tr>`;
+      })
+      .join('');
+
+    const htmlWorkbook = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8" />
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Izin Device SOS</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<style>
+  table { border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11pt; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: middle; }
+  th { background-color: #312e81; color: #ffffff; font-weight: bold; text-align: center; }
+</style>
+</head>
+<body>
+  <table>
+    <thead>
+      <tr>
+        <th>No</th>
+        <th>No. Registrasi (TA)</th>
+        <th>Tahun Ajaran</th>
+        <th>Nama Lengkap Siswa</th>
+        <th>Jenis Kelamin</th>
+        <th>Unit</th>
+        <th>Kelas</th>
+        <th>Bidang OSN</th>
+        <th>Nama / Jenis Device</th>
+        <th>MAC Address / ID Unik</th>
+        <th>Status Izin</th>
+        <th>Masa Berlaku</th>
+        <th>Catatan</th>
+        <th>Link Verifikasi QR</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRowsHtml}
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    const blob = new Blob(['\uFEFF' + htmlWorkbook], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Izin_Device_SOS_${buildExportFileStamp()}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Berhasil mengekspor ${rowsToExport.length} data izin device ke Excel (.xls).`);
+  };
 
   // Unique OSN fields for dropdown
   const allFields = useMemo(() => {
@@ -699,14 +920,14 @@ export function AdminDevicePermits() {
           </div>
         </div>
 
-        {/* Search & Field Select */}
-        <div className="flex items-center gap-2 flex-1 max-w-md">
-          <div className="relative flex-1">
+        {/* Search, Field, Sort & Export */}
+        <div className="flex flex-wrap items-center gap-2 flex-1 justify-end">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
             <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-2.5" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari siswa, no reg, jenis device, IP..."
+              placeholder="Cari siswa, no reg, jenis device, MAC..."
               className="pl-9 h-9 text-xs"
             />
           </div>
@@ -723,6 +944,60 @@ export function AdminDevicePermits() {
               </option>
             ))}
           </select>
+
+          <div className="flex items-center gap-1">
+            <select
+              value={sortField}
+              onChange={(e) => setSortField(e.target.value as PermitSortField)}
+              title="Urutkan berdasarkan"
+              className="h-9 px-2.5 bg-background border rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="regNumber">Urut: No. Reg</option>
+              <option value="name">Urut: Nama Siswa</option>
+              <option value="unitGrade">Urut: Unit &amp; Kelas</option>
+              <option value="osnField">Urut: Bidang OSN</option>
+              <option value="deviceName">Urut: Nama Device</option>
+              <option value="deviceMac">Urut: MAC Address</option>
+              <option value="status">Urut: Status Izin</option>
+            </select>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="h-9 px-2 text-xs border-slate-300 cursor-pointer"
+              title={sortDirection === 'asc' ? 'Urutan Naik (A-Z / Kecil-Besar)' : 'Urutan Turun (Z-A / Besar-Kecil)'}
+            >
+              {sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportCsv()}
+              className="h-9 text-xs border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold flex items-center gap-1.5 cursor-pointer"
+              title="Ekspor data hasil sortir & urutan saat ini ke file CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600" />
+              <span>CSV ({filteredPermits.length})</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportExcel()}
+              className="h-9 text-xs border-emerald-300 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100 font-semibold flex items-center gap-1.5 cursor-pointer"
+              title="Ekspor data hasil sortir & urutan saat ini ke file Excel (.xls)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Excel ({filteredPermits.length})</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -801,6 +1076,26 @@ export function AdminDevicePermits() {
 
             <Button
               size="sm"
+              variant="outline"
+              onClick={() => handleExportExcel(permits.filter(p => selectedIds.includes(p.id)))}
+              className="h-8 text-xs border-emerald-300 text-emerald-200 hover:bg-emerald-500/20 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />
+              Excel ({selectedIds.length})
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleExportCsv(permits.filter(p => selectedIds.includes(p.id)))}
+              className="h-8 text-xs border-slate-300 text-slate-100 hover:bg-white/10 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              CSV ({selectedIds.length})
+            </Button>
+
+            <Button
+              size="sm"
               variant="ghost"
               onClick={() => setSelectedIds([])}
               className="h-8 text-xs text-indigo-300 hover:text-white hover:bg-white/10"
@@ -830,12 +1125,90 @@ export function AdminDevicePermits() {
                   )}
                 </button>
               </TableHead>
-              <TableHead className="w-32 text-xs">No. Reg (TA)</TableHead>
-              <TableHead className="text-xs">Nama Siswa</TableHead>
-              <TableHead className="text-xs">Unit & Kelas</TableHead>
-              <TableHead className="text-xs">Bidang OSN</TableHead>
-              <TableHead className="text-xs">Device & MAC/ID</TableHead>
-              <TableHead className="text-xs">Status Izin</TableHead>
+              <TableHead className="w-32 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('regNumber')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>No. Reg (TA)</span>
+                  {sortField === 'regNumber' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('name')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>Nama Siswa</span>
+                  {sortField === 'name' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('unitGrade')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>Unit &amp; Kelas</span>
+                  {sortField === 'unitGrade' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('osnField')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>Bidang OSN</span>
+                  {sortField === 'osnField' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('deviceMac')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>Device &amp; MAC/ID</span>
+                  {sortField === 'deviceMac' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('status')}
+                  className="inline-flex items-center gap-1 hover:text-indigo-600 cursor-pointer font-semibold"
+                >
+                  <span>Status Izin</span>
+                  {sortField === 'status' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-right text-xs">Aksi</TableHead>
             </TableRow>
           </TableHeader>

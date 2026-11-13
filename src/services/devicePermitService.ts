@@ -825,12 +825,13 @@ export async function uploadDevicePermitPdfFile(
         base64Data,
       }),
     });
-    if (resp.ok) {
+    const contentType = resp.headers.get('content-type') || '';
+    if (resp.ok && contentType.includes('application/json')) {
       const json = await resp.json();
       if (json?.url) {
         servedUrl = json.url;
       }
-    } else if (resp.status === 400) {
+    } else if (resp.status === 400 && contentType.includes('application/json')) {
       const errJson = await resp.json().catch(() => ({}));
       if (errJson?.error) throw new Error(errJson.error);
     }

@@ -28,6 +28,7 @@ import { UsersManagement } from './pages/management/UsersManagement';
 import { PublicHome } from './pages/PublicHome';
 import { InternalHome } from './pages/InternalHome';
 import { PublicPermitVerification } from './pages/public/PublicPermitVerification';
+import { PublicPermitPdfViewer } from './pages/public/PublicPermitPdfViewer';
 import { StudentDevicePermit } from './pages/student/StudentDevicePermit';
 import { AdminDevicePermits } from './pages/admin/AdminDevicePermits';
 
@@ -49,6 +50,8 @@ export default function App() {
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/permit/:id" element={<PublicPermitVerification />} />
           <Route path="/permit" element={<PublicPermitVerification />} />
+          <Route path="/permit/pdf/:unit" element={<PublicPermitPdfViewer />} />
+          <Route path="/api/device-permits/pdf/:unit" element={<PublicPermitPdfViewer />} />
           <Route path="/verify-device/:id" element={<PublicPermitVerification />} />
           
           <Route element={<ProtectedRoute />}>
