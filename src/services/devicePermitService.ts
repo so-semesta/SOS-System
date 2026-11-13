@@ -170,18 +170,68 @@ const SIGNATORIES_SMA = {
 
 export const PDF_FILES = {
   SMP: {
-    url: '/assets/aistudio/Izin_WA_SMP_39523655.pdf',
-    fileName: 'Izin_WA_SMP_39523655.pdf',
+    url: '/assets/aistudio/2627SMP_4cc5979e.pdf',
+    fileName: '2627SMP_4cc5979e.pdf',
     title: 'Surat Permohonan Izin Web dan Device - SMP Semesta',
     date: '7 Oktober 2026',
   },
   SMA: {
-    url: '/assets/aistudio/Izin_WA_SMA_7d11466a.pdf',
-    fileName: 'Izin_WA_SMA_7d11466a.pdf',
+    url: '/assets/aistudio/2627SMA_97f45d75.pdf',
+    fileName: '2627SMA_97f45d75.pdf',
     title: 'Surat Permohonan Izin Web dan Device - SMA Semesta',
     date: '23 Juli 2026',
   },
 };
+
+export interface DevicePermitLetter {
+  unit: SchoolUnit;
+  url: string;
+  fileName: string;
+  title: string;
+  date: string;
+  sourceType: 'default' | 'upload' | 'url';
+  sizeBytes?: number;
+  hasChunks?: boolean;
+  chunkCount?: number;
+  updatedAt: number;
+  updatedBy?: string;
+}
+
+export function getDefaultPermitLetters(): Record<SchoolUnit, DevicePermitLetter> {
+  return {
+    SMP: {
+      unit: 'SMP',
+      url: PDF_FILES.SMP.url,
+      fileName: PDF_FILES.SMP.fileName,
+      title: PDF_FILES.SMP.title,
+      date: PDF_FILES.SMP.date,
+      sourceType: 'default',
+      hasChunks: false,
+      chunkCount: 0,
+      updatedAt: 0,
+    },
+    SMA: {
+      unit: 'SMA',
+      url: PDF_FILES.SMA.url,
+      fileName: PDF_FILES.SMA.fileName,
+      title: PDF_FILES.SMA.title,
+      date: PDF_FILES.SMA.date,
+      sourceType: 'default',
+      hasChunks: false,
+      chunkCount: 0,
+      updatedAt: 0,
+    },
+  };
+}
+
+let lettersMemoryCache: Record<SchoolUnit, DevicePermitLetter> = getDefaultPermitLetters();
+
+export function getPermitLettersCache(): Record<SchoolUnit, DevicePermitLetter> {
+  return {
+    SMP: { ...lettersMemoryCache.SMP },
+    SMA: { ...lettersMemoryCache.SMA },
+  };
+}
 
 export function extractTACode(academicYear: string = '2026/2027'): string {
   // e.g. "2026/2027" -> "2627", "2025/2026" -> "2526"
@@ -207,13 +257,14 @@ export function createSlug(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// 12 Students SMP Semesta from PDF
+// 13 Students SMP Semesta from PDF
 const SMP_RAW_STUDENTS: Array<[string, 'L' | 'P', string, string]> = [
   ['Muhammad Raihan Al Biruni', 'L', '7A', 'IPA'],
   ['Aqilla Sabrina Azzahra', 'P', '7B', 'IPA'],
   ['Muhammad Faza Fauzan Adzima', 'L', '7A', 'IPA'],
   ['Alyauma Malaika Dhiyandha Putri', 'P', '8B', 'IPA'],
   ['Kayla Almira Wahyudi', 'P', '8B', 'IPA'],
+  ['Alfian Pradiptama Tahitoe', 'L', '7A', 'IPA'],
   ['Muhammad Rafie Issan Al Fattah', 'L', '7A', 'IPS'],
   ['Giandra Algajaya', 'L', '8A', 'IPS'],
   ['Muhammad Yusuf Zhafran Aqila', 'L', '7A', 'Matematika'],
@@ -342,7 +393,8 @@ export function mapFirestoreDocToPermit(docId: string, data: Partial<DevicePermi
   const unit = (data.unit as SchoolUnit) || (docId.startsWith('SMA') ? 'SMA' : 'SMP');
   const defaultRules = unit === 'SMA' ? COMMON_RULES_SMA : COMMON_RULES_SMP;
   const defaultSigs = unit === 'SMA' ? SIGNATORIES_SMA : SIGNATORIES_SMP;
-  const defaultPdf = unit === 'SMA' ? PDF_FILES.SMA : PDF_FILES.SMP;
+  const activeLetter = lettersMemoryCache[unit];
+  const defaultPdf = activeLetter || (unit === 'SMA' ? PDF_FILES.SMA : PDF_FILES.SMP);
   const academicYear = data.academicYear || '2026/2027';
   const taCode = data.academicYearCode || extractTACode(academicYear);
   const regNumber = data.regNumber || docId;
@@ -616,12 +668,344 @@ function syncOfficialLetterPermits(loadedPermits: DevicePermitStudent[]): Device
 }
 
 /**
+ * Fetch official PDF letters metadata per unit (SMP / SMA) from Firestore
+ */
+export async function getDevicePermitLetters(forceRefresh: boolean = false): Promise<Record<SchoolUnit, DevicePermitLetter>> {
+  const defaults = getDefaultPermitLetters();
+  try {
+    const colRef = collection(db, 'devicePermitLetters');
+    let snapshot;
+    if (forceRefresh) {
+      try {
+        snapshot = await getDocsFromServer(colRef);
+      } catch {
+        snapshot = await getDocs(colRef);
+      }
+    } else {
+      snapshot = await getDocs(colRef);
+    }
+
+    const merged: Record<SchoolUnit, DevicePermitLetter> = {
+      SMP: { ...defaults.SMP },
+      SMA: { ...defaults.SMA },
+    };
+
+    if (!snapshot.empty) {
+      snapshot.docs.forEach(d => {
+        const unit = d.id.toUpperCase() as SchoolUnit;
+        if (unit === 'SMP' || unit === 'SMA') {
+          const data = d.data() as Partial<DevicePermitLetter>;
+          merged[unit] = {
+            ...defaults[unit],
+            ...data,
+            unit,
+            url: data.url || defaults[unit].url,
+            fileName: data.fileName || defaults[unit].fileName,
+            title: data.title || defaults[unit].title,
+            date: data.date || defaults[unit].date,
+            sourceType: data.sourceType || 'default',
+            updatedAt: data.updatedAt || 0,
+          };
+        }
+      });
+    }
+
+    lettersMemoryCache = merged;
+    permitsMemoryCache = permitsMemoryCache.map(p => ({
+      ...p,
+      pdfUrl: merged[p.unit].url,
+      pdfFileName: merged[p.unit].fileName,
+    }));
+
+    return getPermitLettersCache();
+  } catch (err) {
+    console.warn('Error fetching devicePermitLetters, using cached letters:', err);
+    return getPermitLettersCache();
+  }
+}
+
+/**
+ * Realtime subscription to devicePermitLetters so uploaded SMP/SMA PDFs sync immediately
+ */
+export function subscribeToDevicePermitLetters(
+  onUpdate: (letters: Record<SchoolUnit, DevicePermitLetter>) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  const colRef = collection(db, 'devicePermitLetters');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const defaults = getDefaultPermitLetters();
+      const merged: Record<SchoolUnit, DevicePermitLetter> = {
+        SMP: { ...defaults.SMP },
+        SMA: { ...defaults.SMA },
+      };
+
+      snapshot.docs.forEach(d => {
+        const unit = d.id.toUpperCase() as SchoolUnit;
+        if (unit === 'SMP' || unit === 'SMA') {
+          const data = d.data() as Partial<DevicePermitLetter>;
+          merged[unit] = {
+            ...defaults[unit],
+            ...data,
+            unit,
+            url: data.url || defaults[unit].url,
+            fileName: data.fileName || defaults[unit].fileName,
+            title: data.title || defaults[unit].title,
+            date: data.date || defaults[unit].date,
+            sourceType: data.sourceType || 'default',
+            updatedAt: data.updatedAt || 0,
+          };
+        }
+      });
+
+      lettersMemoryCache = merged;
+      permitsMemoryCache = permitsMemoryCache.map(p => ({
+        ...p,
+        pdfUrl: merged[p.unit].url,
+        pdfFileName: merged[p.unit].fileName,
+      }));
+      onUpdate(getPermitLettersCache());
+    },
+    (err) => {
+      console.warn('Realtime devicePermitLetters subscription error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const cleanBase64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(cleanBase64);
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Upload a new PDF file for SMP or SMA device permits.
+ * Persists chunks in Firestore (for cross-instance durability) AND pushes to Express endpoint for immediate serving.
+ */
+export async function uploadDevicePermitPdfFile(
+  unit: SchoolUnit,
+  file: File,
+  options?: { title?: string; date?: string; updatedBy?: string }
+): Promise<DevicePermitLetter> {
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    throw new Error('Format file harus berupa dokumen PDF (.pdf).');
+  }
+  const MAX_SIZE_BYTES = 6 * 1024 * 1024;
+  if (file.size > MAX_SIZE_BYTES) {
+    throw new Error('Ukuran maksimal file PDF adalah 6 MB.');
+  }
+
+  const base64Data = await readFileAsBase64(file);
+  if (!base64Data) {
+    throw new Error('File PDF kosong atau gagal dibaca.');
+  }
+
+  const now = Date.now();
+  const cleanFileName = file.name.trim().slice(0, 280) || `${unit}_Izin_Device_SOS.pdf`;
+
+  // 1. Push to Express server disk cache (best-effort; serverless/static hosts still work via Firestore chunks)
+  let servedUrl = `/api/device-permits/pdf/${unit}?v=${now}`;
+  try {
+    const resp = await fetch('/api/device-permits/upload-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        unit,
+        fileName: cleanFileName,
+        base64Data,
+      }),
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json?.url) {
+        servedUrl = json.url;
+      }
+    } else if (resp.status === 400) {
+      const errJson = await resp.json().catch(() => ({}));
+      if (errJson?.error) throw new Error(errJson.error);
+    }
+  } catch (err: any) {
+    // Only rethrow explicit validation errors; ignore network/404 on static deployments
+    if (err?.message && (err.message.includes('PDF') || err.message.includes('Ukuran'))) {
+      throw err;
+    }
+  }
+
+  // 2. Persist chunks + metadata to Firestore so PDF persists across restarts and devices
+  const CHUNK_SIZE = 500000;
+  const chunks: string[] = [];
+  for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
+    chunks.push(base64Data.slice(i, i + CHUNK_SIZE));
+  }
+
+  const defaults = getDefaultPermitLetters()[unit];
+  const letterDoc: DevicePermitLetter = {
+    unit,
+    url: servedUrl,
+    fileName: cleanFileName,
+    title: (options?.title?.trim() || defaults.title).slice(0, 280),
+    date: (options?.date?.trim() || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })).slice(0, 95),
+    sourceType: 'upload',
+    sizeBytes: file.size,
+    hasChunks: true,
+    chunkCount: chunks.length,
+    updatedAt: now,
+    updatedBy: (options?.updatedBy || auth.currentUser?.email || 'management').slice(0, 240),
+  };
+
+  try {
+    // Delete stale old chunks beyond new chunk count
+    const chunksCol = collection(db, 'devicePermitLetters', unit, 'chunks');
+    const existingChunksSnap = await getDocs(chunksCol).catch(() => null);
+
+    const batch = writeBatch(db);
+    if (existingChunksSnap && !existingChunksSnap.empty) {
+      existingChunksSnap.docs.forEach(d => {
+        const idx = Number(d.data()?.index ?? -1);
+        if (idx >= chunks.length || !d.id.startsWith('chunk_')) {
+          batch.delete(d.ref);
+        }
+      });
+    }
+
+    chunks.forEach((chunkData, idx) => {
+      const chunkRef = doc(db, 'devicePermitLetters', unit, 'chunks', `chunk_${idx}`);
+      batch.set(chunkRef, {
+        index: idx,
+        data: chunkData,
+        updatedAt: now,
+      });
+    });
+
+    const letterRef = doc(db, 'devicePermitLetters', unit);
+    batch.set(letterRef, removeUndefined(letterDoc));
+
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `devicePermitLetters/${unit}`);
+  }
+
+  lettersMemoryCache[unit] = letterDoc;
+  permitsMemoryCache = permitsMemoryCache.map(p =>
+    p.unit === unit ? { ...p, pdfUrl: letterDoc.url, pdfFileName: letterDoc.fileName } : p
+  );
+
+  return { ...letterDoc };
+}
+
+/**
+ * Save an external PDF URL (e.g. Google Drive / direct PDF URL) for SMP or SMA
+ */
+export async function saveDevicePermitPdfUrl(
+  unit: SchoolUnit,
+  externalUrl: string,
+  options?: { fileName?: string; title?: string; date?: string; updatedBy?: string }
+): Promise<DevicePermitLetter> {
+  const cleanUrl = externalUrl.trim();
+  if (!cleanUrl || (!cleanUrl.startsWith('https://') && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('/'))) {
+    throw new Error('Masukkan URL PDF yang valid (diawali https:// atau http://).');
+  }
+
+  const now = Date.now();
+  const defaults = getDefaultPermitLetters()[unit];
+  const letterDoc: DevicePermitLetter = {
+    unit,
+    url: cleanUrl.slice(0, 1900),
+    fileName: (options?.fileName?.trim() || `Surat_Izin_${unit}_SOS.pdf`).slice(0, 280),
+    title: (options?.title?.trim() || defaults.title).slice(0, 280),
+    date: (options?.date?.trim() || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })).slice(0, 95),
+    sourceType: 'url',
+    sizeBytes: 0,
+    hasChunks: false,
+    chunkCount: 0,
+    updatedAt: now,
+    updatedBy: (options?.updatedBy || auth.currentUser?.email || 'management').slice(0, 240),
+  };
+
+  try {
+    // Clear uploaded disk cache if switching to external URL
+    fetch(`/api/device-permits/pdf/${unit}`, { method: 'DELETE' }).catch(() => null);
+
+    const chunksCol = collection(db, 'devicePermitLetters', unit, 'chunks');
+    const existingChunksSnap = await getDocs(chunksCol).catch(() => null);
+    const batch = writeBatch(db);
+    if (existingChunksSnap && !existingChunksSnap.empty) {
+      existingChunksSnap.docs.forEach(d => batch.delete(d.ref));
+    }
+    const letterRef = doc(db, 'devicePermitLetters', unit);
+    batch.set(letterRef, removeUndefined(letterDoc));
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `devicePermitLetters/${unit}`);
+  }
+
+  lettersMemoryCache[unit] = letterDoc;
+  permitsMemoryCache = permitsMemoryCache.map(p =>
+    p.unit === unit ? { ...p, pdfUrl: letterDoc.url, pdfFileName: letterDoc.fileName } : p
+  );
+
+  return { ...letterDoc };
+}
+
+/**
+ * Reset SMP or SMA official permit PDF back to the bundled default signed letter
+ */
+export async function resetDevicePermitPdfToDefault(unit: SchoolUnit): Promise<DevicePermitLetter> {
+  const defaults = getDefaultPermitLetters()[unit];
+  const now = Date.now();
+  const resetDoc: DevicePermitLetter = {
+    ...defaults,
+    sourceType: 'default',
+    hasChunks: false,
+    chunkCount: 0,
+    updatedAt: now,
+    updatedBy: (auth.currentUser?.email || 'management').slice(0, 240),
+  };
+
+  try {
+    fetch(`/api/device-permits/pdf/${unit}`, { method: 'DELETE' }).catch(() => null);
+
+    const chunksCol = collection(db, 'devicePermitLetters', unit, 'chunks');
+    const existingChunksSnap = await getDocs(chunksCol).catch(() => null);
+    const batch = writeBatch(db);
+    if (existingChunksSnap && !existingChunksSnap.empty) {
+      existingChunksSnap.docs.forEach(d => batch.delete(d.ref));
+    }
+    const letterRef = doc(db, 'devicePermitLetters', unit);
+    batch.set(letterRef, removeUndefined(resetDoc));
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `devicePermitLetters/${unit}`);
+  }
+
+  lettersMemoryCache[unit] = resetDoc;
+  permitsMemoryCache = permitsMemoryCache.map(p =>
+    p.unit === unit ? { ...p, pdfUrl: resetDoc.url, pdfFileName: resetDoc.fileName } : p
+  );
+
+  return { ...resetDoc };
+}
+
+/**
  * Fetch all device permits from Firestore.
  * Automatically synchronizes with all active SOS students in the database.
  * The 37 official letter students remain 'APPROVED', and any other active SOS student is listed (e.g. 'REJECTED' / Belum Ada Izin).
  */
 export async function getAllDevicePermits(forceRefresh: boolean = false): Promise<DevicePermitStudent[]> {
   try {
+    // Load active PDF letters first so permits map to latest uploaded URLs
+    await getDevicePermitLetters(forceRefresh).catch(() => null);
+
     const colRef = collection(db, 'devicePermits');
     let snapshot;
     if (forceRefresh) {

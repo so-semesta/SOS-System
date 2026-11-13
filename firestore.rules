@@ -235,10 +235,47 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(logId) && (isAdmin() || existing().studentId == request.auth.uid);
     }
 
+    function isValidDevicePermitLetter(data) {
+      return data.keys().hasAll(['unit', 'url', 'fileName', 'updatedAt']) &&
+             data.keys().hasOnly(['unit', 'url', 'fileName', 'title', 'date', 'sourceType', 'sizeBytes', 'hasChunks', 'chunkCount', 'updatedAt', 'updatedBy']) &&
+             data.unit in ['SMP', 'SMA'] &&
+             data.url is string && data.url.size() >= 1 && data.url.size() <= 2000 &&
+             data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 300 &&
+             (!('title' in data) || (data.title is string && data.title.size() <= 300)) &&
+             (!('date' in data) || (data.date is string && data.date.size() <= 100)) &&
+             (!('sourceType' in data) || (data.sourceType in ['default', 'upload', 'url'])) &&
+             (!('sizeBytes' in data) || (data.sizeBytes is number && data.sizeBytes >= 0 && data.sizeBytes <= 10485760)) &&
+             (!('hasChunks' in data) || data.hasChunks is bool) &&
+             (!('chunkCount' in data) || (data.chunkCount is number && data.chunkCount >= 0 && data.chunkCount <= 25)) &&
+             data.updatedAt is number &&
+             (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 256));
+    }
+
+    function isValidPdfChunk(data) {
+      return data.keys().hasAll(['index', 'data', 'updatedAt']) &&
+             data.keys().hasOnly(['index', 'data', 'updatedAt']) &&
+             data.index is number && data.index >= 0 && data.index < 25 &&
+             data.data is string && data.data.size() >= 1 && data.data.size() <= 750000 &&
+             data.updatedAt is number;
+    }
+
     // Device Permits (Public read for QR code verification; Admin/Management write)
     match /devicePermits/{permitId} {
       allow read: if true;
       allow write: if isSignedIn() && isAdmin();
+    }
+
+    // Official Permit PDF Letters per Unit (SMP & SMA)
+    match /devicePermitLetters/{unit} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && isValidId(unit) && unit in ['SMP', 'SMA'] && isAdmin() && isValidDevicePermitLetter(incoming());
+      allow delete: if isSignedIn() && isValidId(unit) && unit in ['SMP', 'SMA'] && isAdmin();
+
+      match /chunks/{chunkId} {
+        allow read: if true;
+        allow create, update: if isSignedIn() && isValidId(unit) && unit in ['SMP', 'SMA'] && isValidId(chunkId) && isAdmin() && isValidPdfChunk(incoming());
+        allow delete: if isSignedIn() && isValidId(unit) && isValidId(chunkId) && isAdmin();
+      }
     }
     
     // Test collection for offline checks

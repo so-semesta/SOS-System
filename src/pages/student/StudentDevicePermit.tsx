@@ -8,7 +8,12 @@ import {
   getPermitsCache,
   hasPermitsLoadedFromFirestore,
   subscribeToDevicePermits,
+  getDevicePermitLetters,
+  getPermitLettersCache,
+  subscribeToDevicePermitLetters,
   DevicePermitStudent,
+  DevicePermitLetter,
+  SchoolUnit,
   getVerificationUrl,
 } from '../../services/devicePermitService';
 import { A7DeviceSticker } from '../../components/stickers/A7DeviceSticker';
@@ -57,6 +62,9 @@ export function StudentDevicePermit() {
   const [loading, setLoading] = useState(() => !hasPermitsLoadedFromFirestore());
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [permitLetters, setPermitLetters] = useState<Record<SchoolUnit, DevicePermitLetter>>(() =>
+    getPermitLettersCache()
+  );
 
   const isAdmin = isAdminRole(userProfile?.role);
 
@@ -73,6 +81,10 @@ export function StudentDevicePermit() {
         .catch(() => null);
     }
 
+    getDevicePermitLetters(true).then(letters => {
+      if (isMounted) setPermitLetters(letters);
+    });
+
     getAllDevicePermits(true).then(permits => {
       if (isMounted) {
         setAllPermits(permits);
@@ -87,9 +99,16 @@ export function StudentDevicePermit() {
       }
     });
 
+    const unsubLetters = subscribeToDevicePermitLetters(updatedLetters => {
+      if (isMounted) {
+        setPermitLetters(updatedLetters);
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubscribe();
+      unsubLetters();
     };
   }, [currentUser?.uid]);
 
@@ -191,7 +210,7 @@ Mohon bantuan bapak/ibu guru pembina untuk memverifikasi dan mendaftarkan perang
 
           {/* Quick Link to PDF if matched */}
           {myPermit && (
-            <a href={myPermit.pdfUrl} target="_blank" rel="noreferrer">
+            <a href={permitLetters[myPermit.unit]?.url || myPermit.pdfUrl} target="_blank" rel="noreferrer">
               <Button variant="outline" className="text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50">
                 <FileText className="w-3.5 h-3.5 mr-1.5" />
                 <span>Surat Izin Resmi ({myPermit.unit}) PDF</span>

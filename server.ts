@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -17,7 +18,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "15mb" }));
 
   // API route for extracting poster
   app.post("/api/extract-poster", async (req, res) => {
@@ -430,6 +431,180 @@ async function startServer() {
       console.error("[Scheduler Error]:", schedErr);
     }
   }, 30000);
+
+  // --- DEVICE PERMIT PDF UPLOAD & SERVE ROUTES ---
+  const permitUploadsDir = path.join(process.cwd(), "public", "uploads", "device-permits");
+
+  const getDefaultPermitPdfPath = (unit: "SMP" | "SMA") =>
+    path.join(
+      process.cwd(),
+      "public",
+      "assets",
+      "aistudio",
+      unit === "SMP" ? "2627SMP_4cc5979e.pdf" : "2627SMA_97f45d75.pdf"
+    );
+
+  const loadFirebaseConfigSafe = () => {
+    try {
+      const cfgPath = path.join(process.cwd(), "firebase-applet-config.json");
+      if (fs.existsSync(cfgPath)) {
+        return JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  app.post("/api/device-permits/upload-pdf", (req, res) => {
+    try {
+      const { unit, fileName, base64Data } = req.body || {};
+      if (unit !== "SMP" && unit !== "SMA") {
+        return res.status(400).json({ error: "Unit harus SMP atau SMA." });
+      }
+      if (!base64Data || typeof base64Data !== "string") {
+        return res.status(400).json({ error: "Data file PDF tidak ditemukan." });
+      }
+
+      const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+      const pdfBuffer = Buffer.from(cleanBase64.trim(), "base64");
+
+      if (pdfBuffer.length < 100 || pdfBuffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        return res.status(400).json({ error: "File yang diunggah bukan dokumen PDF yang valid." });
+      }
+      if (pdfBuffer.length > 10 * 1024 * 1024) {
+        return res.status(400).json({ error: "Ukuran maksimal PDF adalah 10 MB." });
+      }
+
+      fs.mkdirSync(permitUploadsDir, { recursive: true });
+      const pdfPath = path.join(permitUploadsDir, `${unit}_latest.pdf`);
+      const metaPath = path.join(permitUploadsDir, `${unit}_meta.json`);
+      const safeFileName = (typeof fileName === "string" && fileName.trim() ? fileName.trim() : `${unit}_Izin_Device_SOS.pdf`).replace(/[^a-zA-Z0-9._\- ]/g, "_");
+      const now = Date.now();
+
+      fs.writeFileSync(pdfPath, pdfBuffer);
+      fs.writeFileSync(metaPath, JSON.stringify({ fileName: safeFileName, updatedAt: now, sizeBytes: pdfBuffer.length }));
+
+      return res.json({
+        success: true,
+        url: `/api/device-permits/pdf/${unit}?v=${now}`,
+        fileName: safeFileName,
+        sizeBytes: pdfBuffer.length,
+        updatedAt: now,
+      });
+    } catch (err: any) {
+      console.error("[Upload Permit PDF Error]:", err);
+      return res.status(500).json({ error: err?.message || "Gagal menyimpan PDF di server." });
+    }
+  });
+
+  app.get("/api/device-permits/pdf/:unit", async (req, res) => {
+    try {
+      const unitParam = String(req.params.unit || "").toUpperCase();
+      if (unitParam !== "SMP" && unitParam !== "SMA") {
+        return res.status(400).send("Invalid unit");
+      }
+      const unit = unitParam as "SMP" | "SMA";
+      const pdfPath = path.join(permitUploadsDir, `${unit}_latest.pdf`);
+      const metaPath = path.join(permitUploadsDir, `${unit}_meta.json`);
+
+      let downloadName = `${unit}_Izin_Device_SOS.pdf`;
+      let metaUpdatedAt = 0;
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+          if (meta?.fileName) downloadName = meta.fileName;
+          if (meta?.updatedAt) metaUpdatedAt = Number(meta.updatedAt) || 0;
+        } catch {
+          // ignore
+        }
+      }
+
+      const requestedV = Number(req.query.v || 0);
+      const isDiskCacheStale = requestedV > 0 && metaUpdatedAt > 0 && requestedV > metaUpdatedAt + 2000;
+
+      if (fs.existsSync(pdfPath) && !isDiskCacheStale) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${downloadName}"`);
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        return res.sendFile(pdfPath);
+      }
+
+      // Self-heal from Firestore chunks if server restarted on ephemeral disk
+      const fbCfg = loadFirebaseConfigSafe();
+      if (fbCfg?.projectId && fbCfg?.firestoreDatabaseId) {
+        const baseDocUrl = `https://firestore.googleapis.com/v1/projects/${fbCfg.projectId}/databases/${fbCfg.firestoreDatabaseId}/documents/devicePermitLetters/${unit}`;
+        const docResp = await fetch(baseDocUrl);
+        if (docResp.ok) {
+          const docJson: any = await docResp.json();
+          const fields = docJson?.fields || {};
+          const sourceType = fields?.sourceType?.stringValue;
+          const externalUrl = fields?.url?.stringValue;
+          const fbFileName = fields?.fileName?.stringValue;
+          if (fbFileName) downloadName = fbFileName;
+
+          if (sourceType === "url" && externalUrl && /^https?:\/\//i.test(externalUrl)) {
+            return res.redirect(externalUrl);
+          }
+
+          if (fields?.hasChunks?.booleanValue) {
+            const chunksResp = await fetch(`${baseDocUrl}/chunks?pageSize=50`);
+            if (chunksResp.ok) {
+              const chunksJson: any = await chunksResp.json();
+              const docs = Array.isArray(chunksJson?.documents) ? chunksJson.documents : [];
+              if (docs.length > 0) {
+                docs.sort((a: any, b: any) => {
+                  const ia = Number(a?.fields?.index?.integerValue ?? 0);
+                  const ib = Number(b?.fields?.index?.integerValue ?? 0);
+                  return ia - ib;
+                });
+                const combinedBase64 = docs.map((d: any) => d?.fields?.data?.stringValue || "").join("");
+                if (combinedBase64) {
+                  const restoredBuf = Buffer.from(combinedBase64, "base64");
+                  fs.mkdirSync(permitUploadsDir, { recursive: true });
+                  fs.writeFileSync(pdfPath, restoredBuf);
+                  fs.writeFileSync(metaPath, JSON.stringify({ fileName: downloadName, updatedAt: Date.now(), sizeBytes: restoredBuf.length }));
+                  res.setHeader("Content-Type", "application/pdf");
+                  res.setHeader("Content-Disposition", `inline; filename="${downloadName}"`);
+                  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+                  return res.send(restoredBuf);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Final fallback to bundled default official PDF
+      const defaultPath = getDefaultPermitPdfPath(unit);
+      if (fs.existsSync(defaultPath)) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${path.basename(defaultPath)}"`);
+        return res.sendFile(defaultPath);
+      }
+
+      return res.status(404).send("PDF not found");
+    } catch (err: any) {
+      console.error("[Serve Permit PDF Error]:", err);
+      return res.status(500).send("Gagal memuat dokumen PDF");
+    }
+  });
+
+  app.delete("/api/device-permits/pdf/:unit", (req, res) => {
+    try {
+      const unitParam = String(req.params.unit || "").toUpperCase();
+      if (unitParam !== "SMP" && unitParam !== "SMA") {
+        return res.status(400).json({ error: "Invalid unit" });
+      }
+      const pdfPath = path.join(permitUploadsDir, `${unitParam}_latest.pdf`);
+      const metaPath = path.join(permitUploadsDir, `${unitParam}_meta.json`);
+      if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+      if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "Gagal mereset PDF" });
+    }
+  });
 
   // Serve static assets from public folder
   const publicPath = path.join(process.cwd(), "public");

@@ -7,9 +7,13 @@ import {
   getPermitsCache,
   hasPermitsLoadedFromFirestore,
   subscribeToDevicePermits,
+  getDevicePermitLetters,
+  getPermitLettersCache,
+  subscribeToDevicePermitLetters,
   createSlug,
   DevicePermitStudent,
-  PDF_FILES,
+  DevicePermitLetter,
+  SchoolUnit,
 } from '../../services/devicePermitService';
 import { A7DeviceSticker } from '../../components/stickers/A7DeviceSticker';
 import { LOGO_BASE64 } from '../../lib/constants';
@@ -52,9 +56,17 @@ export function PublicPermitVerification() {
     hasPermitsLoadedFromFirestore() ? getPermitsCache() : []
   );
 
+  const [permitLetters, setPermitLetters] = useState<Record<SchoolUnit, DevicePermitLetter>>(() =>
+    getPermitLettersCache()
+  );
+
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+
+    getDevicePermitLetters(true).then(letters => {
+      if (isMounted) setPermitLetters(letters);
+    });
 
     if (id) {
       getDevicePermitByIdOrSlug(id).then(permit => {
@@ -93,9 +105,16 @@ export function PublicPermitVerification() {
       setLoading(false);
     });
 
+    const unsubLetters = subscribeToDevicePermitLetters(updatedLetters => {
+      if (isMounted) {
+        setPermitLetters(updatedLetters);
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubscribe();
+      unsubLetters();
     };
   }, [id]);
 
@@ -226,7 +245,7 @@ export function PublicPermitVerification() {
 
             <div className="flex items-center gap-2 self-stretch sm:self-auto">
               <a
-                href={currentPermit.pdfUrl}
+                href={permitLetters[currentPermit.unit]?.url || currentPermit.pdfUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex-1 sm:flex-initial"
@@ -490,7 +509,7 @@ export function PublicPermitVerification() {
                   Surat resmi yang ditandatangani oleh Koordinator School Culture, Koordinator Tim Olimpiade, dan Kepala Sekolah.
                 </p>
                 <a
-                  href={currentPermit.pdfUrl}
+                  href={permitLetters[currentPermit.unit]?.url || currentPermit.pdfUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="block w-full"
@@ -563,7 +582,7 @@ export function PublicPermitVerification() {
                 <span className="text-[11px] text-slate-500">Masa Berlaku: Okt 2026 - Mei 2027</span>
               </div>
             </div>
-            <a href={PDF_FILES.SMP.url} target="_blank" rel="noreferrer">
+            <a href={permitLetters.SMP.url} target="_blank" rel="noreferrer" title={permitLetters.SMP.fileName}>
               <Button size="sm" variant="outline" className="h-8 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50">
                 <Download className="w-3.5 h-3.5 mr-1" /> PDF
               </Button>
@@ -580,7 +599,7 @@ export function PublicPermitVerification() {
                 <span className="text-[11px] text-slate-500">Masa Berlaku: Okt 2026 - Mei 2027</span>
               </div>
             </div>
-            <a href={PDF_FILES.SMA.url} target="_blank" rel="noreferrer">
+            <a href={permitLetters.SMA.url} target="_blank" rel="noreferrer" title={permitLetters.SMA.fileName}>
               <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50">
                 <Download className="w-3.5 h-3.5 mr-1" /> PDF
               </Button>

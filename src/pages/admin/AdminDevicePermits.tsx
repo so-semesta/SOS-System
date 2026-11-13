@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   getAllDevicePermits,
   updateDevicePermit,
@@ -6,11 +6,17 @@ import {
   bulkUpdateIndividualPermits,
   createDevicePermit,
   deleteDevicePermit,
+  getDevicePermitLetters,
+  getPermitLettersCache,
+  subscribeToDevicePermitLetters,
+  uploadDevicePermitPdfFile,
+  saveDevicePermitPdfUrl,
+  resetDevicePermitPdfToDefault,
   DevicePermitStudent,
+  DevicePermitLetter,
   SchoolUnit,
   PermitStatus,
   getVerificationUrl,
-  PDF_FILES,
   extractTACode,
 } from '../../services/devicePermitService';
 import { A7DeviceSticker } from '../../components/stickers/A7DeviceSticker';
@@ -51,6 +57,10 @@ import {
   Plus,
   HelpCircle,
   X,
+  Upload,
+  RotateCcw,
+  Link2,
+  Loader2,
 } from 'lucide-react';
 import { MacAddressGuideModal } from '../../components/stickers/MacAddressGuideModal';
 import { toast } from 'sonner';
@@ -100,12 +110,27 @@ export function AdminDevicePermits() {
   });
   const [isCreating, setIsCreating] = useState(false);
 
+  // Official PDF Management States (SMP & SMA)
+  const [permitLetters, setPermitLetters] = useState<Record<SchoolUnit, DevicePermitLetter>>(() =>
+    getPermitLettersCache()
+  );
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [uploadingUnit, setUploadingUnit] = useState<SchoolUnit | null>(null);
+  const [urlInputUnit, setUrlInputUnit] = useState<Record<SchoolUnit, string>>({ SMP: '', SMA: '' });
+  const [showUrlMode, setShowUrlMode] = useState<Record<SchoolUnit, boolean>>({ SMP: false, SMA: false });
+  const smpFileInputRef = useRef<HTMLInputElement>(null);
+  const smaFileInputRef = useRef<HTMLInputElement>(null);
+
   // Load permits from Firestore / memory
   const loadPermits = async () => {
     setLoading(true);
     try {
-      const data = await getAllDevicePermits(true);
+      const [data, letters] = await Promise.all([
+        getAllDevicePermits(true),
+        getDevicePermitLetters(true),
+      ]);
       setPermits(data);
+      setPermitLetters(letters);
     } catch (err) {
       console.error('Error loading permits:', err);
       toast.error('Gagal memuat data izin perangkat');
@@ -116,7 +141,60 @@ export function AdminDevicePermits() {
 
   useEffect(() => {
     loadPermits();
+    const unsubLetters = subscribeToDevicePermitLetters((updatedLetters) => {
+      setPermitLetters(updatedLetters);
+    });
+    return () => unsubLetters();
   }, []);
+
+  const handleUploadUnitPdf = async (unit: SchoolUnit, file?: File) => {
+    if (!file) return;
+    setUploadingUnit(unit);
+    try {
+      const updated = await uploadDevicePermitPdfFile(unit, file);
+      setPermitLetters(prev => ({ ...prev, [unit]: updated }));
+      toast.success(`PDF Surat Izin ${unit} (${updated.fileName}) berhasil diperbarui!`);
+    } catch (err: any) {
+      toast.error(err?.message || `Gagal mengunggah PDF ${unit}`);
+    } finally {
+      setUploadingUnit(null);
+      if (unit === 'SMP' && smpFileInputRef.current) smpFileInputRef.current.value = '';
+      if (unit === 'SMA' && smaFileInputRef.current) smaFileInputRef.current.value = '';
+    }
+  };
+
+  const handleSaveUnitPdfUrl = async (unit: SchoolUnit) => {
+    const rawUrl = urlInputUnit[unit]?.trim();
+    if (!rawUrl) {
+      toast.error('Masukkan link PDF terlebih dahulu');
+      return;
+    }
+    setUploadingUnit(unit);
+    try {
+      const updated = await saveDevicePermitPdfUrl(unit, rawUrl);
+      setPermitLetters(prev => ({ ...prev, [unit]: updated }));
+      setShowUrlMode(prev => ({ ...prev, [unit]: false }));
+      setUrlInputUnit(prev => ({ ...prev, [unit]: '' }));
+      toast.success(`Link PDF Surat Izin ${unit} berhasil disimpan!`);
+    } catch (err: any) {
+      toast.error(err?.message || `Gagal menyimpan link PDF ${unit}`);
+    } finally {
+      setUploadingUnit(null);
+    }
+  };
+
+  const handleResetUnitPdf = async (unit: SchoolUnit) => {
+    setUploadingUnit(unit);
+    try {
+      const resetDoc = await resetDevicePermitPdfToDefault(unit);
+      setPermitLetters(prev => ({ ...prev, [unit]: resetDoc }));
+      toast.success(`PDF Surat Izin ${unit} dikembalikan ke surat bawaan.`);
+    } catch (err: any) {
+      toast.error(err?.message || `Gagal mereset PDF ${unit}`);
+    } finally {
+      setUploadingUnit(null);
+    }
+  };
 
   // Filtered dataset
   const filteredPermits = useMemo(() => {
@@ -460,15 +538,26 @@ export function AdminDevicePermits() {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </Button>
 
-          <a href={PDF_FILES.SMP.url} target="_blank" rel="noreferrer">
-            <Button variant="outline" size="sm" className="h-9 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsPdfModalOpen(true)}
+            className="h-9 text-xs border-purple-200 bg-purple-50/70 text-purple-700 hover:bg-purple-100 font-semibold flex items-center gap-1.5 cursor-pointer"
+            title="Upload ulang atau kelola PDF Surat Izin SMP & SMA"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload PDF SMP/SMA</span>
+          </Button>
+
+          <a href={permitLetters.SMP.url} target="_blank" rel="noreferrer" title={permitLetters.SMP.fileName}>
+            <Button variant="outline" size="sm" className="h-9 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 cursor-pointer">
               <FileText className="w-3.5 h-3.5 mr-1" />
               <span>PDF SMP</span>
             </Button>
           </a>
 
-          <a href={PDF_FILES.SMA.url} target="_blank" rel="noreferrer">
-            <Button variant="outline" size="sm" className="h-9 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+          <a href={permitLetters.SMA.url} target="_blank" rel="noreferrer" title={permitLetters.SMA.fileName}>
+            <Button variant="outline" size="sm" className="h-9 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 cursor-pointer">
               <FileText className="w-3.5 h-3.5 mr-1" />
               <span>PDF SMA</span>
             </Button>
@@ -1558,6 +1647,189 @@ export function AdminDevicePermits() {
 
       {/* TUTORIAL MAC ADDRESS / ID DEVICE MODAL */}
       <MacAddressGuideModal open={isGuideOpen} onOpenChange={setIsGuideOpen} />
+
+      {/* UPLOAD & KELOLA PDF SURAT IZIN SMP / SMA MODAL */}
+      {isPdfModalOpen && (
+        <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-6">
+            <DialogHeader className="pb-3 border-b">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                <span>Upload Ulang PDF Surat Izin Device (SMP &amp; SMA)</span>
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Dokumen PDF yang diunggah di sini langsung berlaku untuk panel Management, Portal Siswa, dan halaman Verifikasi QR Publik.
+              </p>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+              {(['SMP', 'SMA'] as SchoolUnit[]).map((unit) => {
+                const letter = permitLetters[unit];
+                const isSMP = unit === 'SMP';
+                const isUploading = uploadingUnit === unit;
+                const inputRef = isSMP ? smpFileInputRef : smaFileInputRef;
+                const sizeText =
+                  letter.sizeBytes && letter.sizeBytes > 0
+                    ? letter.sizeBytes >= 1024 * 1024
+                      ? `${(letter.sizeBytes / (1024 * 1024)).toFixed(2)} MB`
+                      : `${Math.round(letter.sizeBytes / 1024)} KB`
+                    : null;
+
+                return (
+                  <div
+                    key={unit}
+                    className={`rounded-xl border p-4 flex flex-col gap-3 ${
+                      isSMP
+                        ? 'border-indigo-200 bg-indigo-50/30'
+                        : 'border-emerald-200 bg-emerald-50/30'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span
+                          className={`text-xs font-bold uppercase tracking-wide ${
+                            isSMP ? 'text-indigo-700' : 'text-emerald-700'
+                          }`}
+                        >
+                          Surat Izin {unit} Semesta
+                        </span>
+                        <p className="text-xs font-semibold text-foreground mt-0.5 break-all">
+                          {letter.fileName}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {letter.sourceType === 'upload'
+                            ? 'Diunggah Management'
+                            : letter.sourceType === 'url'
+                              ? 'Link Eksternal'
+                              : 'Surat Bawaan Sistem'}
+                          {sizeText ? ` · ${sizeText}` : ''}
+                          {letter.date ? ` · ${letter.date}` : ''}
+                        </p>
+                      </div>
+
+                      <a href={letter.url} target="_blank" rel="noreferrer">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] bg-white cursor-pointer shrink-0"
+                        >
+                          <ExternalLink className="w-3 h-3 mr-1" />
+                          Lihat
+                        </Button>
+                      </a>
+                    </div>
+
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleUploadUnitPdf(unit, file);
+                      }}
+                    />
+
+                    {/* Drag/Drop & Click Upload Box */}
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer?.files?.[0];
+                        if (file) handleUploadUnitPdf(unit, file);
+                      }}
+                      className="rounded-lg border-2 border-dashed border-slate-300 bg-white/90 p-3.5 text-center space-y-2"
+                    >
+                      <Button
+                        type="button"
+                        disabled={isUploading}
+                        onClick={() => inputRef.current?.click()}
+                        className={`w-full h-9 text-xs font-semibold text-white cursor-pointer ${
+                          isSMP
+                            ? 'bg-indigo-600 hover:bg-indigo-700'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
+                      >
+                        {isUploading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            <span>Mengunggah PDF {unit}...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-3.5 h-3.5 mr-1.5" />
+                            <span>Pilih / Upload Ulang PDF {unit}</span>
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">
+                        Atau seret file <strong>.pdf</strong> ke kotak ini (maks. 6 MB)
+                      </p>
+                    </div>
+
+                    {/* Alternative External Link Input */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowUrlMode(prev => ({ ...prev, [unit]: !prev[unit] }))
+                          }
+                          className="text-[11px] font-semibold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          <span>{showUrlMode[unit] ? 'Tutup Input Link' : 'Atau Pakai Link PDF (Google Drive/URL)'}</span>
+                        </button>
+
+                        {letter.sourceType !== 'default' && (
+                          <button
+                            type="button"
+                            disabled={isUploading}
+                            onClick={() => handleResetUnitPdf(unit)}
+                            className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reset Bawaan</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {showUrlMode[unit] && (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={urlInputUnit[unit]}
+                            onChange={(e) =>
+                              setUrlInputUnit(prev => ({ ...prev, [unit]: e.target.value }))
+                            }
+                            placeholder="https://drive.google.com/file/d/..."
+                            className="h-8 text-xs bg-white"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isUploading}
+                            onClick={() => handleSaveUnitPdfUrl(unit)}
+                            className="h-8 text-xs bg-slate-900 hover:bg-slate-800 text-white shrink-0 cursor-pointer"
+                          >
+                            Simpan
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <DialogFooter className="pt-3 border-t">
+              <Button variant="outline" onClick={() => setIsPdfModalOpen(false)} className="h-8 text-xs">
+                Tutup
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

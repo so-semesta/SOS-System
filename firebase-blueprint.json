@@ -180,11 +180,31 @@
         "schoolName": { "type": "string" },
         "status": { "type": "string", "enum": ["APPROVED", "REJECTED", "DUE"] },
         "deviceName": { "type": "string" },
+        "deviceMac": { "type": "string" },
         "deviceIp": { "type": "string" },
         "notes": { "type": "string" },
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "name", "unit", "status"]
+    },
+    "devicePermitLetter": {
+      "title": "DevicePermitLetter",
+      "description": "Official signed PDF device permit letter metadata per school unit (SMP / SMA)",
+      "type": "object",
+      "properties": {
+        "unit": { "type": "string", "enum": ["SMP", "SMA"] },
+        "url": { "type": "string" },
+        "fileName": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "sourceType": { "type": "string", "enum": ["default", "upload", "url"] },
+        "sizeBytes": { "type": "number" },
+        "hasChunks": { "type": "boolean" },
+        "chunkCount": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["unit", "url", "fileName", "updatedAt"]
     }
   },
   "firestore": {
@@ -218,7 +238,11 @@
     },
     "devicePermits/{permitId}": {
       "schema": { "$ref": "#/entities/devicePermit" },
-      "description": "Authorized device permits with status, device IP, and approval details"
+      "description": "Authorized device permits with status, device MAC/IP, and approval details"
+    },
+    "devicePermitLetters/{unit}": {
+      "schema": { "$ref": "#/entities/devicePermitLetter" },
+      "description": "Active official PDF permit letters for SMP and SMA units"
     }
   }
 }
