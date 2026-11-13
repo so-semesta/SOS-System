@@ -19,7 +19,7 @@ const PREDEFINED_FIELDS = [
   'Fisika', 'Biologi', 'Kimia', 'Kebumian', 'Ekonomi', 
   'Informatika', 'Logika'
 ];
-import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud, Copy, Terminal } from 'lucide-react';
+import { Plus, Trash2, Wand2, Loader2, Image as ImageIcon, UploadCloud, Copy, Terminal, ClipboardPaste, Check, X } from 'lucide-react';
 import { useAuth } from "../../../context/AuthContext";
 import { emptyImagePlaceholder } from "../../../lib/assets";
 import { LOGO_BASE64 } from "../../../lib/constants";
@@ -56,8 +56,27 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.posterUrl || null);
   const [isManualAiOpen, setIsManualAiOpen] = useState(false);
   const [manualAiInput, setManualAiInput] = useState('');
-  
+  const [manualPosterInput, setManualPosterInput] = useState('');
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedBase64, setCopiedBase64] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const MANUAL_AI_PROMPT = `Tolong ekstrak informasi kompetisi/lomba dari poster yang saya lampirkan ini. Balas HANYA dengan JSON mentah sesuai format berikut, tanpa penjelasan apa pun, tanpa markdown backticks (jangan gunakan \`\`\`json). Format:
+{
+  "title": "Judul Acara",
+  "field": ["IPA", "Matematika", "dsb (Pilih dari: IPA, IPS, Matematika, Astronomi, Geografi, Fisika, Biologi, Kimia, Kebumian, Ekonomi, Informatika, Logika)"],
+  "type": "Daring",
+  "registrationDeadline": "YYYY-MM-DD",
+  "fee": 0,
+  "location": "Nama Tempat/Platform",
+  "guidebookUrl": "https://... (opsional, kosongkan jika tidak ada)",
+  "posterUrl": "https://... (opsional URL langsung gambar poster jika ada)",
+  "description": "Deskripsi singkat",
+  "rounds": [
+    { "name": "Penyisihan", "date": "YYYY-MM-DD" }
+  ]
+}`;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -87,74 +106,11 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
   });
 
   
-  const handleApplyManualAI = () => {
-    try {
-      // Allow user to paste with or without markdown backticks
-      let cleanInput = manualAiInput.trim();
-      if (cleanInput.startsWith('```json')) {
-        cleanInput = cleanInput.replace(/```json/g, '').replace(/```/g, '').trim();
-      } else if (cleanInput.startsWith('```')) {
-        cleanInput = cleanInput.replace(/```/g, '').trim();
-      }
-      
-      const data = JSON.parse(cleanInput);
-      
-      if (data.title) form.setValue('title', data.title);
-      if (data.field && Array.isArray(data.field)) {
-        const validFields = data.field.filter((f: string) => PREDEFINED_FIELDS.includes(f));
-        form.setValue('field', validFields);
-      }
-      if (data.type && ['Daring', 'Luring', 'Hybrid'].includes(data.type)) form.setValue('type', data.type as 'Daring' | 'Luring' | 'Hybrid');
-      if (data.registrationDeadline) form.setValue('registrationDeadline', data.registrationDeadline);
-      if (data.fee !== undefined) form.setValue('fee', Number(data.fee) || 0);
-      if (data.location) form.setValue('location', data.location);
-      if (data.description) form.setValue('description', data.description);
-      
-      if (data.rounds && Array.isArray(data.rounds) && data.rounds.length > 0) {
-        // Clear existing rounds
-        const currentRounds = form.getValues('rounds');
-        for (let i = currentRounds.length - 1; i >= 0; i--) {
-          remove(i);
-        }
-        // Add new rounds
-        data.rounds.forEach((r: any) => {
-          if (r.name && r.date) {
-            append({ name: r.name, date: r.date });
-          }
-        });
-      }
-      
-      setIsManualAiOpen(false);
-      setManualAiInput('');
-      toast.success('Data dari AI berhasil diterapkan ke form!');
-    } catch (err) {
-      toast.error('Format JSON tidak valid. Pastikan Anda menyalin persis seperti balasan AI.');
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Ukuran maksimal file adalah 2MB');
-      return;
-    }
-
-    setSelectedFile(file);
-    if (previewUrl && !previewUrl.startsWith('http')) {
-      URL.revokeObjectURL(previewUrl);
-    }
-    setPreviewUrl(URL.createObjectURL(file));
-  };
-
-  const getCompressedBase64 = (file: File): Promise<string> => {
+  const compressImageSourceToBase64 = (source: Blob | string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
+      const processDataUrl = (dataUrlInput: string) => {
         const img = new Image();
-        img.src = event.target?.result as string;
+        img.src = dataUrlInput;
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 800;
@@ -183,13 +139,219 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
         };
         img.onerror = (err) => reject(err);
       };
-      reader.onerror = (err) => reject(err);
+
+      if (typeof source === 'string') {
+        processDataUrl(source);
+      } else {
+        const reader = new FileReader();
+        reader.readAsDataURL(source);
+        reader.onload = (event) => {
+          processDataUrl(event.target?.result as string);
+        };
+        reader.onerror = (err) => reject(err);
+      }
     });
   };
 
+  const applyPastedPosterValue = (val: string, target: 'form' | 'modal') => {
+    if (target === 'modal') {
+      setManualPosterInput(val);
+    } else {
+      setSelectedFile(null);
+      form.setValue('posterUrl', val);
+      setPreviewUrl(val || null);
+    }
+  };
+
+  const handleImageBlobToSlot = async (blob: Blob, target: 'form' | 'modal') => {
+    try {
+      toast.loading('Mengonversi & mengompresi gambar ke Base64...', { id: 'paste-poster' });
+      const compressedBase64 = await compressImageSourceToBase64(blob);
+      applyPastedPosterValue(compressedBase64, target);
+      const sizeKb = Math.round((compressedBase64.length * 3) / 4 / 1024);
+      toast.success(`Gambar berhasil ditempel ke Base64 (~${sizeKb} KB)!`, { id: 'paste-poster' });
+    } catch (err) {
+      console.error('Error converting pasted image:', err);
+      toast.error('Gagal memproses gambar dari clipboard.', { id: 'paste-poster' });
+    }
+  };
+
+  const handlePasteClipboard = async (e: React.ClipboardEvent, target: 'form' | 'modal') => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) {
+          await handleImageBlobToSlot(blob, target);
+        }
+        return;
+      }
+    }
+
+    // If pasted text is an oversized data:image Base64 string (> 350KB), compress it
+    const text = e.clipboardData.getData('text');
+    if (text && text.trim().startsWith('data:image/') && text.length > 350 * 1024) {
+      e.preventDefault();
+      try {
+        toast.loading('Mengompresi Base64 agar aman disimpan...', { id: 'paste-poster' });
+        const compressed = await compressImageSourceToBase64(text.trim());
+        applyPastedPosterValue(compressed, target);
+        const sizeKb = Math.round((compressed.length * 3) / 4 / 1024);
+        toast.success(`Base64 dikompresi menjadi ~${sizeKb} KB!`, { id: 'paste-poster' });
+      } catch {
+        applyPastedPosterValue(text.trim(), target);
+        toast.dismiss('paste-poster');
+      }
+    }
+  };
+
+  const handleReadClipboardButton = async (target: 'form' | 'modal') => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find(t => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            await handleImageBlobToSlot(blob, target);
+            return;
+          }
+        }
+      }
+
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/'))) {
+          if (text.startsWith('data:image/') && text.length > 350 * 1024) {
+            const compressed = await compressImageSourceToBase64(text);
+            applyPastedPosterValue(compressed, target);
+            toast.success('Base64 gambar berhasil ditempel & dikompresi!');
+          } else {
+            applyPastedPosterValue(text, target);
+            toast.success('URL / Base64 gambar berhasil ditempel dari clipboard!');
+          }
+          return;
+        }
+      }
+
+      toast.info('Clipboard belum berisi gambar atau URL. Copy gambar terlebih dahulu lalu tekan Ctrl+V.');
+    } catch (err) {
+      toast.info('Browser membatasi baca clipboard otomatis. Klik kotak URL/Paste lalu tekan Ctrl+V (atau Cmd+V).');
+    }
+  };
+
+  const handleDropImage = async (e: React.DragEvent, target: 'form' | 'modal') => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      await handleImageBlobToSlot(file, target);
+    }
+  };
+
+  const handleApplyManualAI = () => {
+    const trimmedJson = manualAiInput.trim();
+    const trimmedPoster = manualPosterInput.trim();
+
+    if (!trimmedJson && !trimmedPoster) {
+      toast.error('Masukkan balasan JSON dari AI atau tempelkan gambar/URL poster terlebih dahulu.');
+      return;
+    }
+
+    try {
+      if (trimmedJson) {
+        // Allow user to paste with or without markdown backticks
+        let cleanInput = trimmedJson;
+        if (cleanInput.startsWith('```json')) {
+          cleanInput = cleanInput.replace(/```json/g, '').replace(/```/g, '').trim();
+        } else if (cleanInput.startsWith('```')) {
+          cleanInput = cleanInput.replace(/```/g, '').trim();
+        }
+
+        const data = JSON.parse(cleanInput);
+
+        if (data.title) form.setValue('title', data.title);
+        if (data.field && Array.isArray(data.field)) {
+          const validFields = data.field.filter((f: string) => PREDEFINED_FIELDS.includes(f));
+          form.setValue('field', validFields);
+        }
+        if (data.type && ['Daring', 'Luring', 'Hybrid'].includes(data.type)) {
+          form.setValue('type', data.type as 'Daring' | 'Luring' | 'Hybrid');
+        }
+        if (data.registrationDeadline) form.setValue('registrationDeadline', data.registrationDeadline);
+        if (data.fee !== undefined) form.setValue('fee', Number(data.fee) || 0);
+        if (data.location) form.setValue('location', data.location);
+        if (data.guidebookUrl) form.setValue('guidebookUrl', data.guidebookUrl);
+        if (data.description) form.setValue('description', data.description);
+
+        // Apply poster URL/Base64: prioritize manual poster slot if user pasted one, otherwise use JSON posterUrl
+        const resolvedPoster = trimmedPoster || (typeof data.posterUrl === 'string' ? data.posterUrl.trim() : '');
+        if (resolvedPoster) {
+          setSelectedFile(null);
+          form.setValue('posterUrl', resolvedPoster);
+          setPreviewUrl(resolvedPoster);
+        }
+
+        if (data.rounds && Array.isArray(data.rounds) && data.rounds.length > 0) {
+          const currentRounds = form.getValues('rounds');
+          for (let i = currentRounds.length - 1; i >= 0; i--) {
+            remove(i);
+          }
+          data.rounds.forEach((r: any) => {
+            if (r.name && r.date) {
+              append({ name: r.name, date: r.date });
+            }
+          });
+        }
+      } else if (trimmedPoster) {
+        // User only applied poster from slot
+        setSelectedFile(null);
+        form.setValue('posterUrl', trimmedPoster);
+        setPreviewUrl(trimmedPoster);
+      }
+
+      setIsManualAiOpen(false);
+      setManualAiInput('');
+      setManualPosterInput('');
+      toast.success(
+        trimmedPoster
+          ? 'Data AI & poster (URL/Base64) berhasil diterapkan ke form!'
+          : 'Data dari AI berhasil diterapkan ke form!'
+      );
+    } catch (err) {
+      toast.error('Format JSON tidak valid. Pastikan Anda menyalin persis seperti balasan AI.');
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('Ukuran maksimal file adalah 4MB');
+      return;
+    }
+
+    setSelectedFile(file);
+    if (previewUrl && previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const getCompressedBase64 = (file: File): Promise<string> => {
+    return compressImageSourceToBase64(file);
+  };
+
   const handleGenerateAI = async () => {
-    if (!selectedFile) {
-      toast.info('Silakan pilih file poster terlebih dahulu');
+    const currentPosterUrl = form.getValues('posterUrl')?.trim();
+    const hasPastedBase64 = Boolean(currentPosterUrl && currentPosterUrl.startsWith('data:image/'));
+
+    if (!selectedFile && !hasPastedBase64) {
+      toast.info('Pilih file poster atau tempel gambar (Ctrl+V) terlebih dahulu');
       fileInputRef.current?.click();
       return;
     }
@@ -198,7 +360,9 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
     toast.info('AI sedang menganalisis poster lomba...');
 
     try {
-      const base64Data = await getCompressedBase64(selectedFile);
+      const base64Data = selectedFile
+        ? await getCompressedBase64(selectedFile)
+        : (currentPosterUrl as string);
       
       const response = await fetch('/api/extract-poster', {
         method: 'POST',
@@ -263,6 +427,10 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
             onClick: () => setIsManualAiOpen(true)
           }
         });
+        // Pre-fill manual poster slot if user already pasted/selected a poster
+        if (previewUrl) {
+          setManualPosterInput(previewUrl);
+        }
         // Buka dialog prompt manual otomatis agar pengguna tidak terhambat
         setIsManualAiOpen(true);
       } else {
@@ -277,12 +445,15 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
     setSubmitting(true);
 
     try {
-      let finalPosterUrl = values.posterUrl;
+      let finalPosterUrl = values.posterUrl?.trim() || '';
 
       if (selectedFile) {
         toast.info('Memproses poster...');
         const compressedBase64 = await getCompressedBase64(selectedFile);
         finalPosterUrl = compressedBase64;
+      } else if (finalPosterUrl.startsWith('data:image/') && finalPosterUrl.length > 350 * 1024) {
+        toast.info('Mengompresi gambar Base64...');
+        finalPosterUrl = await compressImageSourceToBase64(finalPosterUrl);
       }
 
       const payload: Omit<Competition, 'id'> = {
@@ -334,9 +505,19 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
         </div>
       </CardHeader>
       <CardContent>
-        <div className="mb-6 p-4 border rounded-lg bg-muted/30">
-          <Label className="mb-2 block font-semibold">Upload Poster & Generate Form (AI)</Label>
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div
+          className="mb-6 p-4 border rounded-lg bg-muted/30"
+          onPaste={(e) => handlePasteClipboard(e, 'form')}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => handleDropImage(e, 'form')}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <Label className="font-semibold">Upload / Tempel Gambar Poster &amp; Generate Form (AI)</Label>
+            <span className="text-[11px] text-muted-foreground">
+              Tips: Bisa langsung <strong>Ctrl+V</strong> gambar poster atau drag &amp; drop ke sini tanpa simpan file
+            </span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center flex-wrap">
             <input
               type="file"
               accept="image/*"
@@ -349,9 +530,22 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
               disabled={isGenerating || submitting}
+              className="cursor-pointer"
             >
               <UploadCloud className="mr-2 h-4 w-4" />
               Pilih File Poster
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleReadClipboardButton('form')}
+              disabled={isGenerating || submitting}
+              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 cursor-pointer"
+              title="Tempel gambar poster langsung dari clipboard (tanpa harus download)"
+            >
+              <ClipboardPaste className="mr-2 h-4 w-4" />
+              Tempel Gambar (Clipboard)
             </Button>
             
             {selectedFile && (
@@ -382,27 +576,50 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                 )}
               </Button>
               
-              <Dialog open={isManualAiOpen} onOpenChange={setIsManualAiOpen}>
-                <DialogTrigger render={<Button type="button" variant="secondary" className="border border-purple-200 text-purple-700 hover:bg-purple-100" />}>
+              <Dialog
+                open={isManualAiOpen}
+                onOpenChange={(open) => {
+                  setIsManualAiOpen(open);
+                  if (open && !manualPosterInput) {
+                    const existingUrl = form.getValues('posterUrl')?.trim();
+                    if (existingUrl) setManualPosterInput(existingUrl);
+                  }
+                }}
+              >
+                <DialogTrigger render={<Button type="button" variant="secondary" className="border border-purple-200 text-purple-700 hover:bg-purple-100 cursor-pointer" />}>
                   <Terminal className="mr-2 h-4 w-4" />
                   Isi Manual via AI Lain
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogContent
+                  className="max-w-2xl max-h-[90vh] overflow-y-auto"
+                  onPaste={(e) => {
+                    // Only intercept if clipboard has an image so text paste in JSON textarea still works cleanly
+                    const items = e.clipboardData?.items;
+                    if (items) {
+                      for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.startsWith('image/')) {
+                          handlePasteClipboard(e, 'modal');
+                          return;
+                        }
+                      }
+                    }
+                  }}
+                >
                   <DialogHeader>
-                    <DialogTitle>Bantuan Prompt AI Eksternal (Alternatif)</DialogTitle>
+                    <DialogTitle>Bantuan Prompt AI Eksternal &amp; Slot Poster (URL / Base64)</DialogTitle>
                     <DialogDescription>
-                      Jika ingin mengekstrak melalui antarmuka web ChatGPT, Claude, atau Gemini secara mandiri:
+                      Ekstrak lewat ChatGPT/Gemini/Claude lalu tempel JSON balasan serta gambar/URL posternya langsung di sini tanpa perlu menyimpan file gambar.
                     </DialogDescription>
                   </DialogHeader>
                   
                   <div className="space-y-4 my-2">
-                    <div className="p-4 bg-muted rounded-md text-sm">
-                      <p className="font-semibold mb-2">Langkah-langkah:</p>
+                    <div className="p-3.5 bg-muted rounded-md text-xs sm:text-sm">
+                      <p className="font-semibold mb-1.5">Langkah-langkah Cepat:</p>
                       <ol className="list-decimal pl-5 space-y-1">
                         <li>Buka ChatGPT (chatgpt.com) atau Gemini (gemini.google.com) di tab baru.</li>
-                        <li>Upload poster lomba Anda ke chat tersebut.</li>
-                        <li>Copy teks prompt (perintah) di bawah ini dan paste ke chat AI.</li>
-                        <li>Copy balasan AI (yang berbentuk format JSON), lalu paste ke kotak di bawah ini.</li>
+                        <li>Copy &amp; paste gambar poster lomba ke chat AI beserta prompt di bawah ini.</li>
+                        <li>Copy balasan JSON dari AI dan paste ke kotak JSON.</li>
+                        <li>Untuk posternya: cukup klik kanan <strong>Copy Image</strong> (atau Screenshot) lalu tekan <strong>Ctrl+V</strong> / klik <strong>Tempel Gambar</strong> di Slot Poster — otomatis jadi <strong>Base64</strong>!</li>
                       </ol>
                     </div>
                     
@@ -410,57 +627,129 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
                       <div className="flex items-center justify-between mb-1">
                         <Label className="font-semibold">Prompt untuk AI (Copy ini):</Label>
                         <Button 
+                          type="button"
                           size="sm" 
                           variant="ghost" 
                           onClick={() => {
-                            navigator.clipboard.writeText(`Tolong ekstrak informasi kompetisi/lomba dari poster yang saya lampirkan ini. Balas HANYA dengan JSON mentah sesuai format berikut, tanpa penjelasan apa pun, tanpa markdown backticks (jangan gunakan \`\`\`json). Format:
-{
-  "title": "Judul Acara",
-  "field": ["IPA", "Matematika", "dsb (Pilih dari: IPA, IPS, Matematika, Astronomi, Geografi, Fisika, Biologi, Kimia, Kebumian, Ekonomi, Informatika, Logika)"],
-  "type": "Daring", // (Daring/Luring/Hybrid)
-  "registrationDeadline": "YYYY-MM-DD",
-  "fee": 0, // angka murni tanpa titik/koma
-  "location": "Nama Tempat/Platform",
-  "description": "Deskripsi singkat",
-  "rounds": [
-    { "name": "Penyisihan", "date": "YYYY-MM-DD" }
-  ]
-}`);
+                            navigator.clipboard.writeText(MANUAL_AI_PROMPT);
+                            setCopiedPrompt(true);
                             toast.success("Prompt disalin!");
+                            setTimeout(() => setCopiedPrompt(false), 2000);
                           }}
                         >
-                          <Copy className="h-3 w-3 mr-1" /> Copy Prompt
+                          {copiedPrompt ? <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                          {copiedPrompt ? 'Tersalin' : 'Copy Prompt'}
                         </Button>
                       </div>
-                      <div className="p-3 bg-slate-900 text-slate-100 rounded-md text-xs font-mono whitespace-pre-wrap">
-                        {`Tolong ekstrak informasi kompetisi/lomba dari poster yang saya lampirkan ini. Balas HANYA dengan JSON mentah sesuai format berikut, tanpa penjelasan apa pun, tanpa markdown backticks (jangan gunakan \`\`\`json). Format:
-{
-  "title": "Judul Acara",
-  "field": ["IPA", "Matematika", "dsb (Pilih dari: IPA, IPS, Matematika, Astronomi, Geografi, Fisika, Biologi, Kimia, Kebumian, Ekonomi, Informatika, Logika)"],
-  "type": "Daring", // (Daring/Luring/Hybrid)
-  "registrationDeadline": "YYYY-MM-DD",
-  "fee": 0, // angka murni tanpa titik/koma
-  "location": "Nama Tempat/Platform",
-  "description": "Deskripsi singkat",
-  "rounds": [
-    { "name": "Penyisihan", "date": "YYYY-MM-DD" }
-  ]
-}`}
+                      <div className="p-3 bg-slate-900 text-slate-100 rounded-md text-[11px] font-mono whitespace-pre-wrap max-h-44 overflow-y-auto">
+                        {MANUAL_AI_PROMPT}
                       </div>
                     </div>
                     
                     <div>
-                      <Label className="font-semibold mb-1 block">Paste Balasan AI di sini:</Label>
+                      <Label className="font-semibold mb-1 block">1. Paste Balasan JSON AI di sini:</Label>
                       <Textarea 
                         placeholder={'{\n  "title": "Olimpiade Sains",\n  ...\n}'}
-                        className="font-mono text-xs min-h-[150px]"
+                        className="font-mono text-xs min-h-[120px]"
                         value={manualAiInput}
                         onChange={(e) => setManualAiInput(e.target.value)}
                       />
                     </div>
+
+                    {/* SLOT POSTER URL / BASE64 / COPY-PASTE GAMBAR */}
+                    <div
+                      className="p-3.5 rounded-xl border-2 border-dashed border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-2.5"
+                      onPaste={(e) => handlePasteClipboard(e, 'modal')}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropImage(e, 'modal')}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Label className="font-semibold text-xs sm:text-sm flex items-center gap-1.5 text-indigo-950 dark:text-indigo-200">
+                          <ImageIcon className="h-4 w-4 text-indigo-600" />
+                          <span>2. Slot Poster Lomba (URL Gambar / Base64 / Paste Gambar)</span>
+                        </Label>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReadClipboardButton('modal')}
+                            className="h-7 text-xs bg-white border-indigo-300 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                          >
+                            <ClipboardPaste className="h-3.5 w-3.5 mr-1" />
+                            Tempel Gambar (Clipboard)
+                          </Button>
+                          {manualPosterInput && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                navigator.clipboard.writeText(manualPosterInput);
+                                setCopiedBase64(true);
+                                toast.success(
+                                  manualPosterInput.startsWith('data:')
+                                    ? 'Kode Base64 gambar disalin!'
+                                    : 'URL poster disalin!'
+                                );
+                                setTimeout(() => setCopiedBase64(false), 2000);
+                              }}
+                              className="h-7 text-xs text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+                            >
+                              {copiedBase64 ? <Check className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                              {copiedBase64 ? 'Disalin' : 'Copy URL/Base64'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={manualPosterInput}
+                          onChange={(e) => setManualPosterInput(e.target.value)}
+                          onPaste={(e) => handlePasteClipboard(e, 'modal')}
+                          placeholder="Tekan Ctrl+V gambar langsung di sini, atau paste URL https://... / data:image/..."
+                          className="h-8 text-xs font-mono bg-background"
+                        />
+                        {manualPosterInput && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setManualPosterInput('')}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-600 shrink-0"
+                            title="Hapus poster"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+
+                      {manualPosterInput ? (
+                        <div className="flex items-center gap-3 pt-1">
+                          <img
+                            src={manualPosterInput}
+                            alt="Preview Poster"
+                            className="h-20 w-auto rounded-md border bg-white object-contain"
+                          />
+                          <div className="text-[11px] text-muted-foreground space-y-0.5">
+                            <p className="font-semibold text-foreground">
+                              {manualPosterInput.startsWith('data:image/')
+                                ? `Format: Kode Base64 Siap Simpan (~${Math.round((manualPosterInput.length * 3) / 4 / 1024)} KB)`
+                                : 'Format: URL Gambar Eksternal'}
+                            </p>
+                            <p>Akan otomatis mengisi kolom Poster Lomba saat diterapkan.</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          💡 Tidak perlu download gambar: klik kanan pada poster di web/WhatsApp/AI → pilih <strong>Copy Image</strong> → klik di kotak ini lalu tekan <strong>Ctrl+V</strong> (otomatis terkonversi ke Base64).
+                        </p>
+                      )}
+                    </div>
                     
-                    <Button onClick={handleApplyManualAI} className="w-full">
-                      Terapkan Data ke Form
+                    <Button type="button" onClick={handleApplyManualAI} className="w-full cursor-pointer">
+                      Terapkan Data &amp; Poster ke Form
                     </Button>
                   </div>
                 </DialogContent>
@@ -469,8 +758,23 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
           </div>
           
           {previewUrl && (
-            <div className="mt-4 rounded-md overflow-hidden border bg-muted w-full max-w-[200px]">
-              <img src={previewUrl} alt="Preview Poster" className="w-full h-auto object-cover" />
+            <div className="mt-4 flex items-start gap-3">
+              <div className="rounded-md overflow-hidden border bg-muted w-full max-w-[180px]">
+                <img src={previewUrl} alt="Preview Poster" className="w-full h-auto object-cover" />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPreviewUrl(null);
+                  form.setValue('posterUrl', '');
+                }}
+                className="text-xs text-rose-600 hover:bg-rose-50"
+              >
+                <X className="h-3.5 w-3.5 mr-1" /> Hapus Preview
+              </Button>
             </div>
           )}
         </div>
@@ -581,12 +885,44 @@ export function CompetitionForm({ onSuccess, initialData }: { onSuccess: () => v
               </div>
               
               <div className="space-y-2">
-                <Label>URL Gambar Poster (Opsional)</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>URL Gambar Poster / Kode Base64 (Opsional)</Label>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleReadClipboardButton('form')}
+                      className="h-7 text-xs text-indigo-600 hover:bg-indigo-50 cursor-pointer"
+                    >
+                      <ClipboardPaste className="h-3.5 w-3.5 mr-1" /> Tempel Gambar
+                    </Button>
+                    {form.watch('posterUrl') && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          navigator.clipboard.writeText(form.getValues('posterUrl') || '');
+                          toast.success('URL / Kode Base64 poster disalin!');
+                        }}
+                        className="h-7 text-xs text-emerald-600 hover:bg-emerald-50 cursor-pointer"
+                      >
+                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="flex gap-2">
-                  <Input {...form.register('posterUrl')} placeholder="https://... (Kosongkan jika upload di atas)" className="flex-1" />
+                  <Input
+                    {...form.register('posterUrl')}
+                    onPaste={(e) => handlePasteClipboard(e, 'form')}
+                    placeholder="https://... atau Ctrl+V gambar langsung (auto Base64)"
+                    className="flex-1 font-mono text-xs"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  💡 Tips: Jika gambar dari Instagram, Anda bisa mengekstrak link-nya melalui <a href="https://fastdl.app/photo" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-medium">fastdl.app/photo</a>
+                  💡 Tips: Anda bisa langsung <strong>Ctrl+V</strong> gambar poster (otomatis jadi Base64), atau jika gambar dari Instagram gunakan <a href="https://fastdl.app/photo" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-medium">fastdl.app/photo</a>
                 </p>
                 {form.watch('posterUrl') && !previewUrl && (
                   <div className="mt-2 rounded-md overflow-hidden border bg-muted/50 w-full max-w-[200px]">
