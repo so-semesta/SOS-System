@@ -3,6 +3,7 @@ import {
   getAllDevicePermits,
   updateDevicePermit,
   bulkUpdateDevicePermits,
+  bulkUpdateIndividualPermits,
   createDevicePermit,
   deleteDevicePermit,
   DevicePermitStudent,
@@ -49,6 +50,7 @@ import {
   Eye,
   Plus,
   HelpCircle,
+  X,
 } from 'lucide-react';
 import { MacAddressGuideModal } from '../../components/stickers/MacAddressGuideModal';
 import { toast } from 'sonner';
@@ -70,10 +72,15 @@ export function AdminDevicePermits() {
   // Bulk Selection States
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
-  const [bulkStatus, setBulkStatus] = useState<PermitStatus>('APPROVED');
-  const [bulkAcademicYear, setBulkAcademicYear] = useState('2026/2027');
+  const [bulkTab, setBulkTab] = useState<'individual' | 'uniform'>('individual');
+  const [bulkStatus, setBulkStatus] = useState<'NO_CHANGE' | PermitStatus>('NO_CHANGE');
+  const [bulkAcademicYear, setBulkAcademicYear] = useState('');
   const [bulkDeviceName, setBulkDeviceName] = useState('');
-  const [bulkDeviceIpPrefix, setBulkDeviceIpPrefix] = useState('');
+  const [bulkMacMode, setBulkMacMode] = useState<'no_change' | 'set_value' | 'clear'>('no_change');
+  const [bulkDeviceMac, setBulkDeviceMac] = useState('');
+  const [bulkIndividualRows, setBulkIndividualRows] = useState<
+    Array<{ id: string; regNumber: string; name: string; unit: SchoolUnit; grade: string; osnField: string; deviceName: string; deviceMac: string }>
+  >([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   // Create Student Modal State
@@ -125,6 +132,7 @@ export function AdminDevicePermits() {
           (p.regNumber || '').toLowerCase().includes(q) ||
           p.grade.toLowerCase().includes(q) ||
           (p.deviceName || '').toLowerCase().includes(q) ||
+          (p.deviceMac || '').toLowerCase().includes(q) ||
           (p.deviceIp || '').toLowerCase().includes(q) ||
           p.osnField.toLowerCase().includes(q);
         if (!match) return false;
@@ -176,10 +184,10 @@ export function AdminDevicePermits() {
         status: editingPermit.status,
         academicYear: editingPermit.academicYear,
         regNumber: editingPermit.regNumber,
-        deviceName: editingPermit.deviceName,
-        deviceMac: editingPermit.deviceMac || editingPermit.deviceIp || '',
-        deviceIp: editingPermit.deviceIp,
-        notes: editingPermit.notes,
+        deviceName: editingPermit.deviceName ?? '',
+        deviceMac: editingPermit.deviceMac ?? '',
+        deviceIp: editingPermit.deviceMac !== undefined ? editingPermit.deviceMac : (editingPermit.deviceIp ?? ''),
+        notes: editingPermit.notes ?? '',
         rules: editingPermit.rules,
       });
 
@@ -268,13 +276,37 @@ export function AdminDevicePermits() {
     }
   };
 
-  // Bulk edit submit
+  // Open Bulk Edit Modal
+  const openBulkEditModal = (initialTab: 'individual' | 'uniform' = 'individual') => {
+    const selectedPermits = permits.filter(p => selectedIds.includes(p.id));
+    setBulkIndividualRows(
+      selectedPermits.map(p => ({
+        id: p.id,
+        regNumber: p.regNumber,
+        name: p.name,
+        unit: p.unit,
+        grade: p.grade,
+        osnField: p.osnField,
+        deviceName: p.deviceName || '',
+        deviceMac: p.deviceMac || p.deviceIp || '',
+      }))
+    );
+    setBulkTab(initialTab);
+    setBulkStatus('NO_CHANGE');
+    setBulkAcademicYear('');
+    setBulkDeviceName('');
+    setBulkMacMode('no_change');
+    setBulkDeviceMac('');
+    setIsBulkEditOpen(true);
+  };
+
+  // Bulk edit submit (Uniform mode)
   const handleSaveBulkEdit = async () => {
     if (selectedIds.length === 0) return;
     setIsBulkProcessing(true);
     try {
       const updates: Partial<DevicePermitStudent> = {};
-      if (bulkStatus) updates.status = bulkStatus;
+      if (bulkStatus !== 'NO_CHANGE') updates.status = bulkStatus;
       if (bulkAcademicYear.trim()) {
         updates.academicYear = bulkAcademicYear.trim();
         updates.academicYearCode = extractTACode(bulkAcademicYear.trim());
@@ -282,16 +314,56 @@ export function AdminDevicePermits() {
       if (bulkDeviceName.trim()) {
         updates.deviceName = bulkDeviceName.trim();
       }
+      if (bulkMacMode === 'set_value') {
+        const macVal = bulkDeviceMac.trim();
+        updates.deviceMac = macVal;
+        updates.deviceIp = macVal;
+      } else if (bulkMacMode === 'clear') {
+        updates.deviceMac = '';
+        updates.deviceIp = '';
+      }
+
+      if (Object.keys(updates).length === 0) {
+        toast.info('Pilih minimal satu kolom perubahan terlebih dahulu');
+        setIsBulkProcessing(false);
+        return;
+      }
 
       await bulkUpdateDevicePermits(selectedIds, updates);
 
-      // Reload permits to ensure proper Reg Number updates
+      // Reload permits to ensure proper sync
       await loadPermits();
       toast.success(`Berhasil memperbarui data ${selectedIds.length} siswa secara massal!`);
       setIsBulkEditOpen(false);
       setSelectedIds([]);
-    } catch (err) {
-      toast.error('Gagal memperbarui data massal');
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal memperbarui data massal');
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  // Bulk edit submit (Individual Per-Student MAC & Device mode)
+  const handleSaveBulkIndividual = async () => {
+    if (bulkIndividualRows.length === 0) return;
+    setIsBulkProcessing(true);
+    try {
+      const entries = bulkIndividualRows.map(row => ({
+        id: row.id,
+        updates: {
+          deviceName: row.deviceName.trim(),
+          deviceMac: row.deviceMac.trim(),
+          deviceIp: row.deviceMac.trim(),
+        },
+      }));
+
+      await bulkUpdateIndividualPermits(entries);
+      await loadPermits();
+      toast.success(`Berhasil menyimpan Nama Device & MAC Address untuk ${entries.length} siswa!`);
+      setIsBulkEditOpen(false);
+      setSelectedIds([]);
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menyimpan data MAC Address massal');
     } finally {
       setIsBulkProcessing(false);
     }
@@ -611,11 +683,21 @@ export function AdminDevicePermits() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setIsBulkEditOpen(true)}
-              className="h-8 text-xs border-indigo-300 bg-white/10 hover:bg-white/20 text-white"
+              onClick={() => openBulkEditModal('individual')}
+              className="h-8 text-xs border-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30 text-white font-bold cursor-pointer"
+            >
+              <Wifi className="w-3.5 h-3.5 mr-1 text-emerald-300" />
+              Input MAC &amp; Device Massal
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openBulkEditModal('uniform')}
+              className="h-8 text-xs border-indigo-300 bg-white/10 hover:bg-white/20 text-white cursor-pointer"
             >
               <Edit className="w-3.5 h-3.5 mr-1" />
-              Edit Device & TA Massal
+              Edit Status &amp; TA Massal
             </Button>
 
             <Button
@@ -1014,68 +1096,250 @@ export function AdminDevicePermits() {
         </Dialog>
       )}
 
-      {/* BULK EDIT DIALOG */}
+      {/* BULK EDIT DIALOG (Dual Mode: Individual MAC/Device Table + Uniform Batch Update) */}
       {isBulkEditOpen && (
         <Dialog open={isBulkEditOpen} onOpenChange={setIsBulkEditOpen}>
-          <DialogContent className="sm:max-w-md p-6">
-            <DialogHeader className="pb-3 border-b">
-              <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <Layers className="w-5 h-5 text-indigo-600" />
-                <span>Edit Massal ({selectedIds.length} Siswa Terpilih)</span>
-              </DialogTitle>
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-6">
+            <DialogHeader className="pb-3 border-b shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <DialogTitle className="text-base font-bold flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-indigo-600" />
+                  <span>Edit Massal ({selectedIds.length} Siswa Terpilih)</span>
+                </DialogTitle>
+                <button
+                  type="button"
+                  onClick={() => setIsGuideOpen(true)}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer mr-4"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>Tutorial Cek MAC</span>
+                </button>
+              </div>
+
+              {/* Mode Switcher Tabs */}
+              <div className="flex items-center gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setBulkTab('individual')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    bulkTab === 'individual'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Wifi className="w-3.5 h-3.5" />
+                  <span>1. Input MAC &amp; Device (Per Siswa)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkTab('uniform')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    bulkTab === 'uniform'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>2. Ubah Serentak (Status / TA / Kosongkan)</span>
+                </button>
+              </div>
             </DialogHeader>
 
-            <div className="space-y-3.5 py-3 text-xs">
-              <div>
-                <label className="font-semibold text-foreground block mb-1">Ubah Status Massal</label>
-                <select
-                  value={bulkStatus}
-                  onChange={(e) => setBulkStatus(e.target.value as PermitStatus)}
-                  className="w-full h-8 px-2 bg-background border rounded-lg text-xs font-bold"
-                >
-                  <option value="APPROVED">APPROVED (Diizinkan / Aktif)</option>
-                  <option value="DUE">DUE (Masa Izin Telah Habis)</option>
-                  <option value="REJECTED">REJECTED (Ditolak / Dicabut)</option>
-                </select>
-              </div>
+            {/* TAB 1: INDIVIDUAL PER-STUDENT QUICK MAC & DEVICE ENTRY */}
+            {bulkTab === 'individual' && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs bg-indigo-50/70 dark:bg-indigo-950/20 px-3 rounded-xl border border-indigo-200 dark:border-indigo-900 mt-2 shrink-0">
+                  <span className="text-indigo-950 dark:text-indigo-200 text-[11px]">
+                    Isi atau tempel <strong>Nama Device</strong> dan <strong>MAC Address / ID Unik</strong> masing-masing siswa di bawah lalu simpan sekaligus.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setBulkIndividualRows(prev =>
+                        prev.map(r => ({ ...r, deviceMac: '' }))
+                      )
+                    }
+                    className="h-7 text-[11px] border-rose-200 text-rose-700 hover:bg-rose-50 cursor-pointer shrink-0"
+                  >
+                    <X className="w-3 h-3 mr-1" />
+                    Kosongkan Semua MAC
+                  </Button>
+                </div>
 
-              <div>
-                <label className="font-semibold text-foreground block mb-1">Set Tahun Ajaran (TA)</label>
-                <Input
-                  value={bulkAcademicYear}
-                  onChange={(e) => setBulkAcademicYear(e.target.value)}
-                  placeholder="2026/2027"
-                  className="h-8 text-xs font-mono"
-                />
-                <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                  Akan memperbarui kode TA menjadi <strong>{extractTACode(bulkAcademicYear)}</strong>
-                </span>
-              </div>
+                <div className="overflow-y-auto flex-1 border rounded-xl mt-2">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/70 sticky top-0 z-10 border-b">
+                      <tr className="text-left text-[11px] font-bold text-muted-foreground">
+                        <th className="py-2.5 px-3">Siswa</th>
+                        <th className="py-2.5 px-3">Nama / Jenis Device</th>
+                        <th className="py-2.5 px-3">MAC Address / ID Unik (Opsional)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {bulkIndividualRows.map((row, idx) => (
+                        <tr key={row.id} className="hover:bg-muted/30">
+                          <td className="py-2 px-3 align-middle">
+                            <div className="font-bold text-foreground">{row.name}</div>
+                            <div className="text-[10.5px] text-muted-foreground font-mono">
+                              {row.regNumber} • {row.unit} {row.grade}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 align-middle">
+                            <Input
+                              value={row.deviceName}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBulkIndividualRows(prev =>
+                                  prev.map((item, i) => (i === idx ? { ...item, deviceName: val } : item))
+                                );
+                              }}
+                              placeholder="Contoh: Laptop Asus / iPad"
+                              className="h-8 text-xs"
+                            />
+                          </td>
+                          <td className="py-2 px-3 align-middle">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={row.deviceMac}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBulkIndividualRows(prev =>
+                                    prev.map((item, i) => (i === idx ? { ...item, deviceMac: val } : item))
+                                  );
+                                }}
+                                placeholder="EC:3A:56:1D:CE:B8 atau kosong"
+                                className="h-8 text-xs font-mono"
+                              />
+                              {row.deviceMac && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    setBulkIndividualRows(prev =>
+                                      prev.map((item, i) => (i === idx ? { ...item, deviceMac: '' } : item))
+                                    )
+                                  }
+                                  className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-600 shrink-0"
+                                  title="Kosongkan MAC baris ini"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-              <div>
-                <label className="font-semibold text-foreground block mb-1">Set Jenis Device Default (Opsional)</label>
-                <Input
-                  value={bulkDeviceName}
-                  onChange={(e) => setBulkDeviceName(e.target.value)}
-                  placeholder="Contoh: Laptop & Tablet Belajar"
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
+                <DialogFooter className="pt-3 border-t shrink-0">
+                  <Button variant="ghost" onClick={() => setIsBulkEditOpen(false)} className="h-8 text-xs">
+                    Batal
+                  </Button>
+                  <Button
+                    onClick={handleSaveBulkIndividual}
+                    disabled={isBulkProcessing}
+                    className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                    {isBulkProcessing ? 'Menyimpan...' : `Simpan MAC & Device (${bulkIndividualRows.length} Siswa)`}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
 
-            <DialogFooter className="pt-3 border-t">
-              <Button variant="ghost" onClick={() => setIsBulkEditOpen(false)} className="h-8 text-xs">
-                Batal
-              </Button>
-              <Button
-                onClick={handleSaveBulkEdit}
-                disabled={isBulkProcessing}
-                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-              >
-                <Save className="w-3.5 h-3.5 mr-1" />
-                {isBulkProcessing ? 'Memproses...' : 'Terapkan ke Siswa Terpilih'}
-              </Button>
-            </DialogFooter>
+            {/* TAB 2: UNIFORM BATCH UPDATE */}
+            {bulkTab === 'uniform' && (
+              <>
+                <div className="space-y-3.5 py-3 text-xs overflow-y-auto">
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Ubah Status Massal (Opsional)</label>
+                    <select
+                      value={bulkStatus}
+                      onChange={(e) => setBulkStatus(e.target.value as 'NO_CHANGE' | PermitStatus)}
+                      className="w-full h-8 px-2 bg-background border rounded-lg text-xs font-bold"
+                    >
+                      <option value="NO_CHANGE">-- Tidak Diubah --</option>
+                      <option value="APPROVED">APPROVED (Diizinkan / Aktif)</option>
+                      <option value="DUE">DUE (Masa Izin Telah Habis)</option>
+                      <option value="REJECTED">REJECTED (Ditolak / Dicabut)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Set Tahun Ajaran (TA) — Kosongkan jika tetap</label>
+                    <Input
+                      value={bulkAcademicYear}
+                      onChange={(e) => setBulkAcademicYear(e.target.value)}
+                      placeholder="Contoh: 2026/2027 (biarkan kosong jika tidak diubah)"
+                      className="h-8 text-xs font-mono"
+                    />
+                    {bulkAcademicYear.trim() && (
+                      <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                        Akan memperbarui kode TA menjadi <strong>{extractTACode(bulkAcademicYear)}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Set Jenis Device Default — Kosongkan jika tetap</label>
+                    <Input
+                      value={bulkDeviceName}
+                      onChange={(e) => setBulkDeviceName(e.target.value)}
+                      placeholder="Contoh: Laptop & Tablet Belajar"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-muted/40 border space-y-2">
+                    <label className="font-semibold text-foreground block">
+                      Pengaturan Massal MAC Address / ID Unik Device
+                    </label>
+                    <select
+                      value={bulkMacMode}
+                      onChange={(e) => setBulkMacMode(e.target.value as 'no_change' | 'set_value' | 'clear')}
+                      className="w-full h-8 px-2 bg-background border rounded-lg text-xs font-semibold"
+                    >
+                      <option value="no_change">-- Tidak Diubah (Biarkan Data Saat Ini) --</option>
+                      <option value="set_value">Isi MAC Address / ID yang Sama untuk Semua Terpilih</option>
+                      <option value="clear">Kosongkan MAC Address &amp; IP Semua Siswa Terpilih</option>
+                    </select>
+
+                    {bulkMacMode === 'set_value' && (
+                      <Input
+                        value={bulkDeviceMac}
+                        onChange={(e) => setBulkDeviceMac(e.target.value)}
+                        placeholder="Masukkan MAC Address / ID Unik..."
+                        className="h-8 text-xs font-mono"
+                      />
+                    )}
+                    {bulkMacMode === 'clear' && (
+                      <p className="text-[11px] text-rose-600 font-medium">
+                        Semua MAC Address &amp; IP lama milik {selectedIds.length} siswa terpilih akan dihapus menjadi kosong (-).
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <DialogFooter className="pt-3 border-t shrink-0">
+                  <Button variant="ghost" onClick={() => setIsBulkEditOpen(false)} className="h-8 text-xs">
+                    Batal
+                  </Button>
+                  <Button
+                    onClick={handleSaveBulkEdit}
+                    disabled={isBulkProcessing}
+                    className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                    {isBulkProcessing ? 'Memproses...' : 'Terapkan ke Siswa Terpilih'}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
       )}

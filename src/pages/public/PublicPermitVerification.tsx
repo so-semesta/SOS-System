@@ -5,7 +5,11 @@ import {
   getAllDevicePermits,
   getDevicePermitFromCache,
   getPermitsCache,
+  hasPermitsLoadedFromFirestore,
+  subscribeToDevicePermits,
+  createSlug,
   DevicePermitStudent,
+  PDF_FILES,
 } from '../../services/devicePermitService';
 import { A7DeviceSticker } from '../../components/stickers/A7DeviceSticker';
 import { LOGO_BASE64 } from '../../lib/constants';
@@ -39,12 +43,14 @@ export function PublicPermitVerification() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Initialize with in-memory baseline to prevent layout flashing
+  // Only pre-populate from cache if Firestore has already loaded in this session
   const [currentPermit, setCurrentPermit] = useState<DevicePermitStudent | undefined>(() => {
-    return id ? getDevicePermitFromCache(id) : undefined;
+    return id && hasPermitsLoadedFromFirestore() ? getDevicePermitFromCache(id) : undefined;
   });
 
-  const [allPermits, setAllPermits] = useState<DevicePermitStudent[]>(() => getPermitsCache());
+  const [allPermits, setAllPermits] = useState<DevicePermitStudent[]>(() =>
+    hasPermitsLoadedFromFirestore() ? getPermitsCache() : []
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -58,7 +64,7 @@ export function PublicPermitVerification() {
         }
       });
     } else {
-      getAllDevicePermits().then(permits => {
+      getAllDevicePermits(true).then(permits => {
         if (isMounted) {
           setAllPermits(permits);
           setLoading(false);
@@ -66,8 +72,30 @@ export function PublicPermitVerification() {
       });
     }
 
+    // Real-time listener so updates made in Admin Management appear instantaneously
+    const unsubscribe = subscribeToDevicePermits(updatedList => {
+      if (!isMounted) return;
+      setAllPermits(updatedList);
+      if (id) {
+        const target = id.trim().toLowerCase();
+        const match = updatedList.find(
+          p =>
+            p.id.toLowerCase() === target ||
+            p.regNumber.toLowerCase() === target ||
+            p.slug.toLowerCase() === target ||
+            createSlug(p.name) === target ||
+            p.name.toLowerCase() === target
+        );
+        if (match) {
+          setCurrentPermit(match);
+        }
+      }
+      setLoading(false);
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, [id]);
 
@@ -83,9 +111,20 @@ export function PublicPermitVerification() {
         p.osnField.toLowerCase().includes(q) ||
         p.unit.toLowerCase().includes(q) ||
         (p.deviceName && p.deviceName.toLowerCase().includes(q)) ||
+        (p.deviceMac && p.deviceMac.toLowerCase().includes(q)) ||
         (p.deviceIp && p.deviceIp.toLowerCase().includes(q))
     );
   }, [allPermits, searchTerm]);
+
+  if (id && loading && !currentPermit) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        <p className="text-sm font-semibold text-slate-700">Memverifikasi data izin perangkat resmi...</p>
+        <p className="text-xs text-slate-500">Mengambil status terbaru dari database Semesta Olympiad Squad</p>
+      </div>
+    );
+  }
 
   // If a specific student permit was requested and found:
   if (currentPermit) {
@@ -434,8 +473,10 @@ export function PublicPermitVerification() {
                 </p>
 
                 {/* Sticker Render */}
-                <div className="flex justify-center py-2 overflow-x-auto">
-                  <A7DeviceSticker permit={currentPermit} showActions={true} />
+                <div className="overflow-x-auto pb-1">
+                  <div className="w-max mx-auto py-2">
+                    <A7DeviceSticker permit={currentPermit} showActions={true} />
+                  </div>
                 </div>
               </div>
 
@@ -522,7 +563,7 @@ export function PublicPermitVerification() {
                 <span className="text-[11px] text-slate-500">Masa Berlaku: Okt 2026 - Mei 2027</span>
               </div>
             </div>
-            <a href="/assets/aistudio/Izin_WA_SMP_39523655.pdf" target="_blank" rel="noreferrer">
+            <a href={PDF_FILES.SMP.url} target="_blank" rel="noreferrer">
               <Button size="sm" variant="outline" className="h-8 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50">
                 <Download className="w-3.5 h-3.5 mr-1" /> PDF
               </Button>
@@ -539,7 +580,7 @@ export function PublicPermitVerification() {
                 <span className="text-[11px] text-slate-500">Masa Berlaku: Okt 2026 - Mei 2027</span>
               </div>
             </div>
-            <a href="/assets/aistudio/Izin_WA_SMA_7d11466a.pdf" target="_blank" rel="noreferrer">
+            <a href={PDF_FILES.SMA.url} target="_blank" rel="noreferrer">
               <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50">
                 <Download className="w-3.5 h-3.5 mr-1" /> PDF
               </Button>

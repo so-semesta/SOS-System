@@ -6,6 +6,8 @@ import {
   findPermitForStudent,
   getAllDevicePermits,
   getPermitsCache,
+  hasPermitsLoadedFromFirestore,
+  subscribeToDevicePermits,
   DevicePermitStudent,
   getVerificationUrl,
 } from '../../services/devicePermitService';
@@ -48,15 +50,17 @@ import { toast } from 'sonner';
 
 export function StudentDevicePermit() {
   const { currentUser, userProfile } = useAuth();
-  const [allPermits, setAllPermits] = useState<DevicePermitStudent[]>(() => getPermitsCache());
+  const [allPermits, setAllPermits] = useState<DevicePermitStudent[]>(() =>
+    hasPermitsLoadedFromFirestore() ? getPermitsCache() : []
+  );
   const [studentFullName, setStudentFullName] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !hasPermitsLoadedFromFirestore());
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const isAdmin = isAdminRole(userProfile?.role);
 
-  // Fetch extended student profile if available to ensure exact matching with registered name
+  // Fetch extended student profile & live device permits (plus realtime listener)
   useEffect(() => {
     let isMounted = true;
     if (currentUser?.uid) {
@@ -69,15 +73,23 @@ export function StudentDevicePermit() {
         .catch(() => null);
     }
 
-    getAllDevicePermits().then(permits => {
+    getAllDevicePermits(true).then(permits => {
       if (isMounted) {
         setAllPermits(permits);
         setLoading(false);
       }
     });
 
+    const unsubscribe = subscribeToDevicePermits(updated => {
+      if (isMounted) {
+        setAllPermits(updated);
+        setLoading(false);
+      }
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, [currentUser?.uid]);
 
@@ -85,10 +97,10 @@ export function StudentDevicePermit() {
   // Never fallback to other students' permits!
   const myPermit = useMemo(() => {
     if (studentFullName) {
-      const p = findPermitForStudent(studentFullName, currentUser?.email || undefined, currentUser?.uid);
+      const p = findPermitForStudent(studentFullName, currentUser?.email || undefined, currentUser?.uid, allPermits);
       if (p) return p;
     }
-    const p2 = findPermitForStudent(userProfile?.name, currentUser?.email || undefined, currentUser?.uid);
+    const p2 = findPermitForStudent(userProfile?.name, currentUser?.email || undefined, currentUser?.uid, allPermits);
     if (p2) return p2;
 
     if (currentUser?.uid) {

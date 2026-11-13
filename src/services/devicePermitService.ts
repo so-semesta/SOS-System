@@ -2,15 +2,65 @@ import {
   collection,
   doc,
   getDocs,
+  getDocsFromServer,
   getDoc,
+  getDocFromServer,
   setDoc,
-  updateDoc,
+  deleteDoc,
   writeBatch,
   query,
   where,
+  onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { removeUndefined } from '../lib/utils';
+import { db, auth } from '../lib/firebase';
+import { removeUndefined, isRawId, getFriendlyDisplayName } from '../lib/utils';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(error instanceof Error ? error.message : JSON.stringify(errInfo));
+}
 
 export type SchoolUnit = 'SMP' | 'SMA';
 export type PermitStatus = 'APPROVED' | 'REJECTED' | 'DUE';
@@ -222,7 +272,8 @@ export const BASELINE_DEVICE_PERMITS: DevicePermitStudent[] = [
       schoolName: 'SMP Semesta Bilingual Boarding School',
       status: 'APPROVED' as PermitStatus,
       deviceName: 'Laptop & Tablet Belajar',
-      deviceIp: `10.20.14.${10 + idx}`,
+      deviceMac: '',
+      deviceIp: '',
       notes: 'Izin aktif untuk persiapan OSN 2026/2027',
       rules: COMMON_RULES_SMP,
       signatories: SIGNATORIES_SMP,
@@ -250,7 +301,8 @@ export const BASELINE_DEVICE_PERMITS: DevicePermitStudent[] = [
       schoolName: 'SMA Semesta Bilingual Boarding School',
       status: 'APPROVED' as PermitStatus,
       deviceName: 'Laptop & Tablet Belajar',
-      deviceIp: `10.20.15.${10 + idx}`,
+      deviceMac: '',
+      deviceIp: '',
       notes: 'Izin aktif untuk persiapan OSN 2026/2027',
       rules: COMMON_RULES_SMA,
       signatories: SIGNATORIES_SMA,
@@ -263,6 +315,11 @@ export const BASELINE_DEVICE_PERMITS: DevicePermitStudent[] = [
 
 // In-memory cache for fast responsive rendering & offline fallback
 let permitsMemoryCache: DevicePermitStudent[] = [...BASELINE_DEVICE_PERMITS];
+let hasLoadedFromFirestore = false;
+
+export function hasPermitsLoadedFromFirestore(): boolean {
+  return hasLoadedFromFirestore;
+}
 
 export function getPermitsCache(): DevicePermitStudent[] {
   return [...permitsMemoryCache];
@@ -281,8 +338,39 @@ export function getDevicePermitFromCache(idOrSlug: string): DevicePermitStudent 
   );
 }
 
-import { isRawId, getFriendlyDisplayName } from '../lib/utils';
-import { deleteDoc } from 'firebase/firestore';
+export function mapFirestoreDocToPermit(docId: string, data: Partial<DevicePermitStudent>): DevicePermitStudent {
+  const unit = (data.unit as SchoolUnit) || (docId.startsWith('SMA') ? 'SMA' : 'SMP');
+  const defaultRules = unit === 'SMA' ? COMMON_RULES_SMA : COMMON_RULES_SMP;
+  const defaultSigs = unit === 'SMA' ? SIGNATORIES_SMA : SIGNATORIES_SMP;
+  const defaultPdf = unit === 'SMA' ? PDF_FILES.SMA : PDF_FILES.SMP;
+  const academicYear = data.academicYear || '2026/2027';
+  const taCode = data.academicYearCode || extractTACode(academicYear);
+  const regNumber = data.regNumber || docId;
+
+  return {
+    id: docId,
+    regNumber,
+    academicYear,
+    academicYearCode: taCode,
+    slug: data.slug || createSlug(data.name || docId),
+    name: data.name || 'Siswa Tanpa Nama',
+    gender: (data.gender as 'L' | 'P') || 'L',
+    grade: data.grade || '10',
+    osnField: data.osnField || 'Matematika',
+    unit,
+    schoolName: data.schoolName || (unit === 'SMA' ? 'SMA Semesta Bilingual Boarding School' : 'SMP Semesta Bilingual Boarding School'),
+    status: (data.status as PermitStatus) || 'APPROVED',
+    deviceName: data.deviceName ?? '',
+    deviceMac: data.deviceMac ?? '',
+    deviceIp: data.deviceIp ?? '',
+    notes: data.notes ?? '',
+    rules: { ...defaultRules, ...(data.rules || {}) },
+    signatories: defaultSigs,
+    pdfUrl: defaultPdf.url,
+    pdfFileName: defaultPdf.fileName,
+    updatedAt: data.updatedAt || Date.now(),
+  };
+}
 
 /**
  * Sync active SOS students from 'students' and 'users' collections
@@ -343,6 +431,7 @@ async function syncActiveSosStudents(existingPermits: DevicePermitStudent[]): Pr
 
     // Determine which active students are not yet in existingPermits
     const mergedList = [...existingPermits];
+    const usedIds = new Set(mergedList.map(p => p.id));
     const newPermitsToBatch: DevicePermitStudent[] = [];
 
     let smpCounter = mergedList.filter(p => p.unit === 'SMP').length + 1;
@@ -367,9 +456,18 @@ async function syncActiveSosStudents(existingPermits: DevicePermitStudent[]): Pr
         const unit: SchoolUnit = isSMP ? 'SMP' : 'SMA';
         const academicYear = '2026/2027';
         const taCode = extractTACode(academicYear);
-        const seqNum = isSMP ? smpCounter++ : smaCounter++;
-        const numPart = String(seqNum).padStart(3, '0');
-        const regNumber = `${unit}-${taCode}-${numPart}`;
+
+        let regNumber = '';
+        while (true) {
+          const seqNum = isSMP ? smpCounter++ : smaCounter++;
+          const numPart = String(seqNum).padStart(3, '0');
+          const candidate = `${unit}-${taCode}-${numPart}`;
+          if (!usedIds.has(candidate)) {
+            regNumber = candidate;
+            usedIds.add(candidate);
+            break;
+          }
+        }
 
         const defaultRules = unit === 'SMA' ? COMMON_RULES_SMA : COMMON_RULES_SMP;
         const defaultSigs = unit === 'SMA' ? SIGNATORIES_SMA : SIGNATORIES_SMP;
@@ -392,6 +490,7 @@ async function syncActiveSosStudents(existingPermits: DevicePermitStudent[]): Pr
               : 'SMP Semesta Bilingual Boarding School',
           status: 'REJECTED', // Belum Ada Izin
           deviceName: '',
+          deviceMac: '',
           deviceIp: '',
           notes: 'Siswa aktif SOS (Belum memiliki izin resmi device)',
           rules: defaultRules,
@@ -426,54 +525,126 @@ async function syncActiveSosStudents(existingPermits: DevicePermitStudent[]): Pr
 }
 
 /**
+ * Ensure all 37 students from the latest official signed PDF letters
+ * (13 SMP + 24 SMA) exist in the loaded list and use the latest PDF URLs.
+ * Missing students (e.g., newly added in updated PDF) are assigned non-colliding IDs
+ * and synced as 'APPROVED'.
+ */
+function syncOfficialLetterPermits(loadedPermits: DevicePermitStudent[]): DevicePermitStudent[] {
+  const result = [...loadedPermits];
+  const usedIds = new Set(result.map(p => p.id));
+  const toPersist: DevicePermitStudent[] = [];
+
+  for (const official of BASELINE_DEVICE_PERMITS) {
+    const normOfficialName = official.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const existingIdx = result.findIndex(p => {
+      const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return pNorm === normOfficialName || p.name.toLowerCase().trim() === official.name.toLowerCase().trim();
+    });
+
+    if (existingIdx >= 0) {
+      const existing = result[existingIdx];
+      // If student was previously auto-synced as unapproved active student, upgrade them to APPROVED per new official letter
+      const wasAutoRejected =
+        existing.status === 'REJECTED' &&
+        (existing.notes || '').includes('Belum memiliki izin resmi device');
+
+      const needsPdfUpdate = existing.pdfUrl !== official.pdfUrl || existing.pdfFileName !== official.pdfFileName;
+
+      if (wasAutoRejected || needsPdfUpdate) {
+        const updated: DevicePermitStudent = {
+          ...existing,
+          grade: official.grade,
+          osnField: official.osnField,
+          gender: official.gender,
+          unit: official.unit,
+          schoolName: official.schoolName,
+          rules: official.rules,
+          signatories: official.signatories,
+          pdfUrl: official.pdfUrl,
+          pdfFileName: official.pdfFileName,
+          ...(wasAutoRejected
+            ? {
+                status: 'APPROVED' as PermitStatus,
+                deviceName: existing.deviceName || 'Laptop & Tablet Belajar',
+                notes: 'Izin aktif untuk persiapan OSN 2026/2027',
+                updatedAt: Date.now(),
+              }
+            : {}),
+        };
+        result[existingIdx] = updated;
+        if (wasAutoRejected) {
+          toPersist.push(updated);
+        }
+      }
+    } else {
+      // Student from latest letter is missing in Firestore -> assign non-colliding ID
+      let assignId = official.id;
+      if (usedIds.has(assignId)) {
+        let counter = result.filter(p => p.unit === official.unit).length + 1;
+        while (true) {
+          const candidate = `${official.unit}-${official.academicYearCode}-${String(counter++).padStart(3, '0')}`;
+          if (!usedIds.has(candidate)) {
+            assignId = candidate;
+            break;
+          }
+        }
+      }
+      usedIds.add(assignId);
+
+      const created: DevicePermitStudent = {
+        ...official,
+        id: assignId,
+        regNumber: assignId,
+        updatedAt: Date.now(),
+      };
+      result.push(created);
+      toPersist.push(created);
+    }
+  }
+
+  if (toPersist.length > 0) {
+    const batch = writeBatch(db);
+    for (const item of toPersist) {
+      const dRef = doc(db, 'devicePermits', item.id);
+      batch.set(dRef, removeUndefined(item), { merge: true });
+    }
+    batch.commit().catch(err => console.warn('Could not sync updated official letter permits to Firestore:', err));
+  }
+
+  return result;
+}
+
+/**
  * Fetch all device permits from Firestore.
  * Automatically synchronizes with all active SOS students in the database.
- * The 36 official students remain 'APPROVED', and any other active SOS student is listed (e.g. 'REJECTED' / Belum Ada Izin).
+ * The 37 official letter students remain 'APPROVED', and any other active SOS student is listed (e.g. 'REJECTED' / Belum Ada Izin).
  */
 export async function getAllDevicePermits(forceRefresh: boolean = false): Promise<DevicePermitStudent[]> {
   try {
     const colRef = collection(db, 'devicePermits');
-    const snapshot = await getDocs(colRef);
+    let snapshot;
+    if (forceRefresh) {
+      try {
+        snapshot = await getDocsFromServer(colRef);
+      } catch {
+        snapshot = await getDocs(colRef);
+      }
+    } else {
+      snapshot = await getDocs(colRef);
+    }
 
     let loadedPermits: DevicePermitStudent[] = [];
 
     if (!snapshot.empty) {
-      loadedPermits = snapshot.docs.map(d => {
-        const data = d.data() as Partial<DevicePermitStudent>;
-        const unit = (data.unit as SchoolUnit) || (d.id.startsWith('SMA') ? 'SMA' : 'SMP');
-        const defaultRules = unit === 'SMA' ? COMMON_RULES_SMA : COMMON_RULES_SMP;
-        const defaultSigs = unit === 'SMA' ? SIGNATORIES_SMA : SIGNATORIES_SMP;
-        const defaultPdf = unit === 'SMA' ? PDF_FILES.SMA : PDF_FILES.SMP;
-        const academicYear = data.academicYear || '2026/2027';
-        const taCode = data.academicYearCode || extractTACode(academicYear);
-        const regNumber = data.regNumber || d.id;
+      loadedPermits = snapshot.docs.map(d =>
+        mapFirestoreDocToPermit(d.id, d.data() as Partial<DevicePermitStudent>)
+      );
 
-        return {
-          id: d.id,
-          regNumber,
-          academicYear,
-          academicYearCode: taCode,
-          slug: data.slug || createSlug(data.name || d.id),
-          name: data.name || 'Siswa Tanpa Nama',
-          gender: (data.gender as 'L' | 'P') || 'L',
-          grade: data.grade || '10',
-          osnField: data.osnField || 'Matematika',
-          unit,
-          schoolName: data.schoolName || (unit === 'SMA' ? 'SMA Semesta Bilingual Boarding School' : 'SMP Semesta Bilingual Boarding School'),
-          status: (data.status as PermitStatus) || 'APPROVED',
-          deviceName: data.deviceName || '',
-          deviceMac: data.deviceMac || '',
-          deviceIp: data.deviceIp || '',
-          notes: data.notes || '',
-          rules: { ...defaultRules, ...(data.rules || {}) },
-          signatories: defaultSigs,
-          pdfUrl: defaultPdf.url,
-          pdfFileName: defaultPdf.fileName,
-          updatedAt: data.updatedAt || Date.now(),
-        };
-      });
+      // Ensure any new students/updates from the latest PDF letters are synced
+      loadedPermits = syncOfficialLetterPermits(loadedPermits);
     } else {
-      // Seed baseline 36 permits if Firestore collection is fresh
+      // Seed baseline 37 permits if Firestore collection is fresh
       await seedBaselinePermitsToFirestore().catch(e => console.warn('Could not seed permits:', e));
       loadedPermits = [...BASELINE_DEVICE_PERMITS];
     }
@@ -481,11 +652,40 @@ export async function getAllDevicePermits(forceRefresh: boolean = false): Promis
     // Sync with active SOS students from students & users collections
     const fullMergedList = await syncActiveSosStudents(loadedPermits);
     permitsMemoryCache = fullMergedList;
+    hasLoadedFromFirestore = true;
     return fullMergedList;
   } catch (err) {
     console.warn('Error reading devicePermits from Firestore, using memory fallback:', err);
     return permitsMemoryCache;
   }
+}
+
+/**
+ * Real-time subscription to devicePermits collection so changes by admin/management
+ * immediately reflect on Student Portal and Public Verification Portal.
+ */
+export function subscribeToDevicePermits(
+  onUpdate: (permits: DevicePermitStudent[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  const colRef = collection(db, 'devicePermits');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      if (snapshot.empty) return;
+      const mapped = snapshot.docs.map(d =>
+        mapFirestoreDocToPermit(d.id, d.data() as Partial<DevicePermitStudent>)
+      );
+      mapped.sort((a, b) => a.regNumber.localeCompare(b.regNumber));
+      permitsMemoryCache = mapped;
+      hasLoadedFromFirestore = true;
+      onUpdate(mapped);
+    },
+    (err) => {
+      console.warn('Realtime devicePermits subscription error:', err);
+      if (onError) onError(err);
+    }
+  );
 }
 
 /**
@@ -611,7 +811,7 @@ export async function updateDevicePermit(
     updatedAt: Date.now(),
   };
 
-  // 1. Update in Firestore
+  // 1. Update in Firestore (do not silently swallow errors)
   try {
     const docRef = doc(db, 'devicePermits', permitId);
     await setDoc(docRef, removeUndefined({
@@ -627,15 +827,15 @@ export async function updateDevicePermit(
       unit: updatedPermit.unit,
       schoolName: updatedPermit.schoolName,
       status: updatedPermit.status,
-      deviceName: updatedPermit.deviceName || '',
-      deviceMac: updatedPermit.deviceMac || '',
-      deviceIp: updatedPermit.deviceIp || '',
-      notes: updatedPermit.notes || '',
+      deviceName: updatedPermit.deviceName ?? '',
+      deviceMac: updatedPermit.deviceMac ?? '',
+      deviceIp: updatedPermit.deviceIp ?? '',
+      notes: updatedPermit.notes ?? '',
       rules: updatedPermit.rules,
       updatedAt: updatedPermit.updatedAt,
     }), { merge: true });
   } catch (err) {
-    console.error('Error updating permit in Firestore:', err);
+    handleFirestoreError(err, OperationType.UPDATE, `devicePermits/${permitId}`);
   }
 
   // 2. Update memory cache
@@ -645,12 +845,13 @@ export async function updateDevicePermit(
   } else {
     permitsMemoryCache.push(updatedPermit);
   }
+  hasLoadedFromFirestore = true;
 
   return updatedPermit;
 }
 
 /**
- * Bulk update multiple permits
+ * Bulk update multiple permits with identical fields
  */
 export async function bulkUpdateDevicePermits(
   permitIds: string[],
@@ -684,61 +885,119 @@ export async function bulkUpdateDevicePermits(
       }
       return p;
     });
+    hasLoadedFromFirestore = true;
 
     return permitIds.length;
   } catch (err) {
-    console.error('Error bulk updating permits:', err);
-    throw err;
+    handleFirestoreError(err, OperationType.UPDATE, 'devicePermits');
   }
 }
 
 /**
- * Look up permit by ID, slug, or student name
+ * Bulk update individual MAC Address / Device Name per student in a single atomic batch
+ */
+export async function bulkUpdateIndividualPermits(
+  entries: Array<{ id: string; updates: Partial<DevicePermitStudent> }>
+): Promise<number> {
+  if (entries.length === 0) return 0;
+
+  try {
+    const batch = writeBatch(db);
+    const now = Date.now();
+    const updatesMap = new Map<string, Partial<DevicePermitStudent>>();
+
+    for (const entry of entries) {
+      updatesMap.set(entry.id, entry.updates);
+      const docRef = doc(db, 'devicePermits', entry.id);
+      const cleanPayload = removeUndefined({
+        ...entry.updates,
+        updatedAt: now,
+      });
+      batch.set(docRef, cleanPayload, { merge: true });
+    }
+
+    await batch.commit();
+
+    // Update memory cache
+    permitsMemoryCache = permitsMemoryCache.map(p => {
+      const u = updatesMap.get(p.id);
+      if (u) {
+        return {
+          ...p,
+          ...u,
+          updatedAt: now,
+        };
+      }
+      return p;
+    });
+    hasLoadedFromFirestore = true;
+
+    return entries.length;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, 'devicePermits');
+  }
+}
+
+/**
+ * Look up permit by ID, slug, or student name.
+ * Always prioritizes live Firestore data from server over static baseline cache!
  */
 export async function getDevicePermitByIdOrSlug(idOrSlug: string): Promise<DevicePermitStudent | undefined> {
   if (!idOrSlug) return undefined;
   const target = idOrSlug.trim().toLowerCase();
 
-  // Check cache first
-  let found = permitsMemoryCache.find(
-    p =>
-      p.id.toLowerCase() === target ||
-      p.regNumber.toLowerCase() === target ||
-      p.slug.toLowerCase() === target ||
-      createSlug(p.name) === target ||
-      p.name.toLowerCase() === target
-  );
-
-  if (found) return found;
-
-  // Try direct Firestore lookup
   try {
-    const docRef = doc(db, 'devicePermits', idOrSlug);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as DevicePermitStudent;
-      return {
-        ...BASELINE_DEVICE_PERMITS[0],
-        ...data,
-      };
+    // 1. Try direct query by slug first (fast & authoritative for /permit/sma-hanif-pradipta)
+    const slugQuery = query(collection(db, 'devicePermits'), where('slug', '==', target));
+    let slugSnap;
+    try {
+      slugSnap = await getDocsFromServer(slugQuery);
+    } catch {
+      slugSnap = await getDocs(slugQuery);
     }
 
-    // Try fetching all to refresh cache
-    const all = await getAllDevicePermits();
+    if (!slugSnap.empty) {
+      const d = slugSnap.docs[0];
+      const permit = mapFirestoreDocToPermit(d.id, d.data() as Partial<DevicePermitStudent>);
+      hasLoadedFromFirestore = true;
+      return permit;
+    }
+
+    // 2. Try direct document lookup by ID (exact or uppercase like SMA-2627-001)
+    for (const candidateId of [idOrSlug.trim(), idOrSlug.trim().toUpperCase()]) {
+      const docRef = doc(db, 'devicePermits', candidateId);
+      let snap;
+      try {
+        snap = await getDocFromServer(docRef);
+      } catch {
+        snap = await getDoc(docRef);
+      }
+      if (snap.exists()) {
+        const permit = mapFirestoreDocToPermit(snap.id, snap.data() as Partial<DevicePermitStudent>);
+        hasLoadedFromFirestore = true;
+        return permit;
+      }
+    }
+
+    // 3. Fallback to fetching all permits fresh from server & matching by regNumber/name/slug
+    const all = await getAllDevicePermits(true);
     return all.find(
       p =>
         p.id.toLowerCase() === target ||
         p.regNumber.toLowerCase() === target ||
         p.slug.toLowerCase() === target ||
-        createSlug(p.name) === target
+        createSlug(p.name) === target ||
+        p.name.toLowerCase() === target
     );
   } catch (err) {
-    console.warn('Error querying Firestore for permit:', err);
+    console.warn('Error querying Firestore for permit, using memory fallback:', err);
     return permitsMemoryCache.find(
       p =>
         p.id.toLowerCase() === target ||
         p.regNumber.toLowerCase() === target ||
-        p.slug.toLowerCase() === target
+        p.slug.toLowerCase() === target ||
+        createSlug(p.name) === target ||
+        p.name.toLowerCase() === target
     );
   }
 }
@@ -746,23 +1005,24 @@ export async function getDevicePermitByIdOrSlug(idOrSlug: string): Promise<Devic
 export function findPermitForStudent(
   studentName?: string,
   email?: string,
-  userId?: string
+  userId?: string,
+  permitsList: DevicePermitStudent[] = permitsMemoryCache
 ): DevicePermitStudent | undefined {
   if (!studentName && !email && !userId) return undefined;
 
   // 1. Check by userId or exact permit ID
   if (userId) {
-    const byId = permitsMemoryCache.find(p => p.id === userId || (p as any).userId === userId);
+    const byId = permitsList.find(p => p.id === userId || (p as any).userId === userId);
     if (byId) return byId;
   }
 
   // 2. Check by student name
   if (studentName) {
     const cleanName = studentName.trim().toLowerCase();
-    const exact = permitsMemoryCache.find(p => p.name.toLowerCase() === cleanName);
+    const exact = permitsList.find(p => p.name.toLowerCase() === cleanName);
     if (exact) return exact;
 
-    const match = permitsMemoryCache.find(
+    const match = permitsList.find(
       p => cleanName.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(cleanName)
     );
     if (match) return match;
@@ -772,7 +1032,7 @@ export function findPermitForStudent(
   if (email) {
     const cleanEmail = email.trim().toLowerCase();
     const emailPrefix = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '');
-    const matchByEmail = permitsMemoryCache.find(p => {
+    const matchByEmail = permitsList.find(p => {
       const pClean = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       return pClean.includes(emailPrefix) || emailPrefix.includes(pClean);
     });
