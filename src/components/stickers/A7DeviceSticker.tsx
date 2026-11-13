@@ -20,11 +20,13 @@ import { toPng } from 'html-to-image';
 interface A7DeviceStickerProps {
   permit: DevicePermitStudent;
   showActions?: boolean;
+  onPrint?: () => void;
 }
 
 export function A7DeviceSticker({
   permit,
   showActions = true,
+  onPrint,
 }: A7DeviceStickerProps) {
   const stickerRef = useRef<HTMLDivElement>(null);
   const verifyUrl = getVerificationUrl(permit);
@@ -50,6 +52,10 @@ export function A7DeviceSticker({
   };
 
   const handlePrintSingle = () => {
+    if (onPrint) {
+      onPrint();
+      return;
+    }
     window.print();
   };
 

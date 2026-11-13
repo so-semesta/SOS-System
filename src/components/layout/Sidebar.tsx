@@ -60,13 +60,13 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     <>
       <div 
         className={cn(
-          "fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden",
+          "fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden print:hidden",
           isOpen ? "block" : "hidden"
         )}
         onClick={() => setIsOpen(false)}
       />
       <div className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform duration-300 md:relative md:translate-x-0 flex flex-col",
+        "fixed inset-y-0 left-0 z-50 w-64 border-r bg-background transition-transform duration-300 md:relative md:translate-x-0 flex flex-col print:hidden",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-16 items-center border-b px-6">

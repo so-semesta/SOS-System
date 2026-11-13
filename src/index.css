@@ -128,3 +128,27 @@
     @apply font-sans;
     }
 }
+
+@media print {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  [data-sonner-toaster],
+  [data-radix-portal],
+  [data-base-ui-backdrop],
+  [role="dialog"] {
+    display: none !important;
+  }
+}

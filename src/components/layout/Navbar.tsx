@@ -18,7 +18,7 @@ export function Navbar({ toggleSidebar }: NavbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 print:hidden">
       <Button variant="ghost" size="icon" onClick={toggleSidebar} className="md:hidden">
         <Menu className="h-5 w-5" />
         <span className="sr-only">Toggle Sidebar</span>

@@ -89,6 +89,15 @@ export function AdminDevicePermits() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
+  // Print Picker & Batch Sheet States
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printSelectedIds, setPrintSelectedIds] = useState<string[]>([]);
+  const [printSearch, setPrintSearch] = useState('');
+  const [printUnitFilter, setPrintUnitFilter] = useState<'ALL' | SchoolUnit>('ALL');
+  const [printStatusFilter, setPrintStatusFilter] = useState<'ALL' | PermitStatus>('ALL');
+  const [activePrintList, setActivePrintList] = useState<DevicePermitStudent[]>([]);
+  const [singlePrintMode, setSinglePrintMode] = useState(false);
+
   // Bulk Selection States
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -668,12 +677,70 @@ export function AdminDevicePermits() {
     }
   };
 
-  // Print handlers
-  const handlePrintAllSheets = () => {
-    toast.info('Menyiapkan lembar cetak stiker A4 (8 stiker per halaman)...');
+  // Open Print Picker modal (user can choose All, Filtered, or Specific Students)
+  const openPrintPicker = (initialIds?: string[]) => {
+    const defaultIds =
+      initialIds && initialIds.length > 0
+        ? initialIds
+        : selectedIds.length > 0
+          ? selectedIds
+          : filteredPermits.map(p => p.id);
+    setPrintSelectedIds(defaultIds);
+    setPrintSearch('');
+    setPrintUnitFilter(selectedUnit);
+    setPrintStatusFilter(selectedStatus);
+    setIsPrintModalOpen(true);
+  };
+
+  // Filtered students visible inside Print Picker modal
+  const printModalPermits = useMemo(() => {
+    return permits.filter(p => {
+      if (printUnitFilter !== 'ALL' && p.unit !== printUnitFilter) return false;
+      if (printStatusFilter !== 'ALL' && (p.status || 'APPROVED') !== printStatusFilter) return false;
+      if (printSearch.trim()) {
+        const q = printSearch.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.regNumber || '').toLowerCase().includes(q) ||
+          p.grade.toLowerCase().includes(q) ||
+          p.osnField.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [permits, printUnitFilter, printStatusFilter, printSearch]);
+
+  const togglePrintSelectOne = (id: string) => {
+    setPrintSelectedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  };
+
+  const handleExecuteBatchPrint = () => {
+    if (printSelectedIds.length === 0) {
+      toast.error('Pilih minimal 1 siswa untuk dicetak.');
+      return;
+    }
+    const idSet = new Set(printSelectedIds);
+    // Preserve active sorted order from filteredPermits first, then append any others selected
+    const orderedIds = new Set<string>();
+    const chosen: DevicePermitStudent[] = [];
+    for (const p of filteredPermits) {
+      if (idSet.has(p.id)) {
+        chosen.push(p);
+        orderedIds.add(p.id);
+      }
+    }
+    for (const p of permits) {
+      if (idSet.has(p.id) && !orderedIds.has(p.id)) {
+        chosen.push(p);
+      }
+    }
+
+    setSinglePrintMode(false);
+    setActivePrintList(chosen);
+    setIsPrintModalOpen(false);
     setTimeout(() => {
       window.print();
-    }, 400);
+    }, 180);
   };
 
   const handlePrintSelectedOnly = () => {
@@ -681,26 +748,26 @@ export function AdminDevicePermits() {
       toast.error('Pilih siswa yang ingin dicetak terlebih dahulu');
       return;
     }
-    toast.info(`Menyiapkan cetak ${selectedIds.length} stiker terpilih...`);
-    setTimeout(() => {
-      window.print();
-    }, 400);
+    openPrintPicker(selectedIds);
   };
 
   const handlePrintSingle = (student: DevicePermitStudent) => {
-    setPreviewStudent(student);
+    setSinglePrintMode(true);
+    setActivePrintList([student]);
     setTimeout(() => {
       window.print();
-    }, 300);
+    }, 150);
   };
 
-  // Permits to print in sheet mode
-  const permitsToPrint = useMemo(() => {
-    if (selectedIds.length > 0) {
-      return permits.filter(p => selectedIds.includes(p.id));
+  // Chunk activePrintList into explicit A4 pages (8 stickers per page: 2 cols x 4 rows)
+  const printPages = useMemo(() => {
+    const list = activePrintList.length > 0 ? activePrintList : filteredPermits;
+    const pages: DevicePermitStudent[][] = [];
+    for (let i = 0; i < list.length; i += 8) {
+      pages.push(list.slice(i, i + 8));
     }
-    return filteredPermits;
-  }, [selectedIds, permits, filteredPermits]);
+    return pages;
+  }, [activePrintList, filteredPermits]);
 
   return (
     <div className="space-y-6">
@@ -742,11 +809,11 @@ export function AdminDevicePermits() {
           </Button>
 
           <Button
-            onClick={handlePrintAllSheets}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 px-3.5 font-semibold flex items-center gap-1.5 shadow-xs"
+            onClick={() => openPrintPicker()}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 px-3.5 font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak Lembar A4 ({filteredPermits.length} Stiker)</span>
+            <span>Cetak Stiker A4 (Pilih / Semua)</span>
           </Button>
 
           <Button
@@ -1823,7 +1890,11 @@ export function AdminDevicePermits() {
             </DialogHeader>
 
             <div className="py-4 flex flex-col items-center justify-center bg-slate-100 rounded-xl p-4">
-              <A7DeviceSticker permit={previewStudent} showActions={true} />
+              <A7DeviceSticker
+                permit={previewStudent}
+                showActions={true}
+                onPrint={() => handlePrintSingle(previewStudent)}
+              />
             </div>
 
             <div className="pt-2 text-xs text-slate-600 space-y-1">
@@ -1967,33 +2038,246 @@ export function AdminDevicePermits() {
         </Dialog>
       )}
 
+      {/* PRINT PICKER MODAL: Choose All or Specific Students to Print */}
+      {isPrintModalOpen && (
+        <Dialog open={isPrintModalOpen} onOpenChange={setIsPrintModalOpen}>
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-6">
+            <DialogHeader className="pb-3 border-b shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <DialogTitle className="text-base font-bold flex items-center gap-2">
+                  <Printer className="w-5 h-5 text-indigo-600" />
+                  <span>Pilih Stiker Siswa yang Akan Dicetak (A4 • 8 Stiker/Hal)</span>
+                </DialogTitle>
+                <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 font-bold text-xs">
+                  {printSelectedIds.length} Dipilih · {Math.max(1, Math.ceil(printSelectedIds.length / 8))} Halaman A4
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Anda bisa mencetak semua siswa sekaligus atau mencentang beberapa siswa saja.
+              </p>
+            </DialogHeader>
+
+            {/* Quick Presets */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setPrintSelectedIds(permits.map(p => p.id))}
+                className="h-7 text-[11px] font-semibold border-indigo-200 text-indigo-700 hover:bg-indigo-50 cursor-pointer"
+              >
+                Pilih Semua ({permits.length})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setPrintSelectedIds(filteredPermits.map(p => p.id))}
+                className="h-7 text-[11px] font-semibold border-slate-300 hover:bg-slate-100 cursor-pointer"
+              >
+                Sesuai Filter Tabel ({filteredPermits.length})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setPrintSelectedIds(
+                    permits.filter(p => (p.status || 'APPROVED') === 'APPROVED').map(p => p.id)
+                  )
+                }
+                className="h-7 text-[11px] font-semibold border-emerald-200 text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+              >
+                Hanya Approved ({approvedCount})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const visibleIds = new Set(printModalPermits.map(p => p.id));
+                  setPrintSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+                }}
+                className="h-7 text-[11px] font-semibold border-slate-300 hover:bg-slate-100 cursor-pointer"
+              >
+                + Centang Daftar Tampil ({printModalPermits.length})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setPrintSelectedIds([])}
+                className="h-7 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+              >
+                Kosongkan Semua
+              </Button>
+            </div>
+
+            {/* Filter & Search inside Print Modal */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 shrink-0">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-2.5" />
+                <Input
+                  value={printSearch}
+                  onChange={(e) => setPrintSearch(e.target.value)}
+                  placeholder="Cari nama siswa, no reg, kelas, bidang..."
+                  className="pl-9 h-8 text-xs"
+                />
+              </div>
+              <select
+                value={printUnitFilter}
+                onChange={(e) => setPrintUnitFilter(e.target.value as 'ALL' | SchoolUnit)}
+                className="h-8 px-2 bg-background border rounded-lg text-xs font-medium"
+              >
+                <option value="ALL">Semua Unit</option>
+                <option value="SMP">SMP Semesta</option>
+                <option value="SMA">SMA Semesta</option>
+              </select>
+              <select
+                value={printStatusFilter}
+                onChange={(e) => setPrintStatusFilter(e.target.value as 'ALL' | PermitStatus)}
+                className="h-8 px-2 bg-background border rounded-lg text-xs font-medium"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="APPROVED">Approved</option>
+                <option value="DUE">Due</option>
+                <option value="REJECTED">Belum Ada Izin</option>
+              </select>
+            </div>
+
+            {/* Student Checklist */}
+            <div className="overflow-y-auto flex-1 border rounded-xl mt-2 divide-y">
+              {printModalPermits.length === 0 ? (
+                <div className="py-10 text-center text-xs text-muted-foreground">
+                  Tidak ada siswa yang sesuai pencarian.
+                </div>
+              ) : (
+                printModalPermits.map(student => {
+                  const checked = printSelectedIds.includes(student.id);
+                  const status = student.status || 'APPROVED';
+                  return (
+                    <label
+                      key={student.id}
+                      onClick={() => togglePrintSelectOne(student.id)}
+                      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs cursor-pointer transition-colors ${
+                        checked ? 'bg-indigo-50/70' : 'hover:bg-muted/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-indigo-600 shrink-0">
+                          {checked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-slate-400" />}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-foreground truncate">{student.name}</div>
+                          <div className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono font-semibold text-slate-700">{student.regNumber || student.id}</span>
+                            <span>•</span>
+                            <span>{student.unit} Kelas {student.grade}</span>
+                            <span>•</span>
+                            <span className="text-indigo-700 font-medium">OSN {student.osnField}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10.5px] font-mono text-slate-500 hidden sm:inline">
+                          {student.deviceMac || student.deviceIp || 'MAC -'}
+                        </span>
+                        {status === 'APPROVED' && (
+                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]">Approved</Badge>
+                        )}
+                        {status === 'DUE' && (
+                          <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Due</Badge>
+                        )}
+                        {status === 'REJECTED' && (
+                          <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-[10px]">Belum Izin</Badge>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-600 bg-slate-50 border rounded-lg px-3 py-2 shrink-0">
+              Tips Print: Biarkan <strong>Margins: Default</strong> atau <strong>Minimum</strong> dan centang <strong>Background graphics</strong> bila ingin warna penuh pada printer tertentu.
+            </div>
+
+            <DialogFooter className="pt-2 border-t shrink-0">
+              <Button variant="ghost" onClick={() => setIsPrintModalOpen(false)} className="h-8 text-xs">
+                Batal
+              </Button>
+              <Button
+                type="button"
+                disabled={printSelectedIds.length === 0}
+                onClick={handleExecuteBatchPrint}
+                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer flex items-center gap-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak / Simpan PDF ({printSelectedIds.length} Stiker)</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* PRINT STICKER SHEET CONTAINER (Visible during window.print()) */}
-      {/* 
-        A4 Layout: 210mm x 297mm.
-        A7 Sticker: 105mm x 74mm.
-        Exactly 2 columns x 4 rows = 8 stickers per A4 page!
+      {/*
+        A4 Portrait (210mm x 297mm).
+        Safe printable grid: 2 columns x 4 rows = 8 stickers per A4 page.
+        Each slot is 93mm x 66mm containing an exact 105mm x 74mm A7 card scaled 0.885x
+        so total grid footprint (189mm x 271.5mm) fits inside standard printer/Chrome margins with ZERO clipping.
       */}
       <div className="hidden print:block print:w-full print:m-0 print:p-0">
         <style>{`
           @media print {
             @page {
               size: A4 portrait;
-              margin: 4mm;
+              margin: 5mm;
             }
-            body {
-              background: #ffffff !important;
-              color: #000000 !important;
-              font-family: sans-serif !important;
-              margin: 0 !important;
-              padding: 0 !important;
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
-            .sticker-sheet-grid {
+            .a4-print-page {
+              width: 189mm !important;
+              margin: 0 auto !important;
+              padding: 2mm 0 0 0 !important;
               display: grid !important;
-              grid-template-columns: repeat(2, 105mm) !important;
-              grid-auto-rows: 74mm !important;
-              gap: 0px !important;
+              grid-template-columns: repeat(2, 93mm) !important;
+              grid-template-rows: repeat(4, 66mm) !important;
+              column-gap: 3mm !important;
+              row-gap: 2.5mm !important;
               justify-content: center !important;
-              page-break-after: always;
+              align-content: start !important;
+              break-inside: avoid !important;
+              page-break-after: always !important;
+              break-after: page !important;
+            }
+            .a4-print-page:last-child {
+              page-break-after: auto !important;
+              break-after: auto !important;
+            }
+            .a4-sticker-slot {
+              width: 93mm !important;
+              height: 66mm !important;
+              position: relative !important;
+              overflow: hidden !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            .a4-sticker-scale {
+              width: 105mm !important;
+              height: 74mm !important;
+              transform: scale(0.885) !important;
+              transform-origin: top left !important;
+            }
+            .single-print-wrap {
+              display: flex !important;
+              justify-content: center !important;
+              align-items: flex-start !important;
+              padding-top: 8mm !important;
+              width: 100% !important;
             }
             .sticker-card {
               box-shadow: none !important;
@@ -2003,19 +2287,25 @@ export function AdminDevicePermits() {
           }
         `}</style>
 
-        <div className="sticker-sheet-grid">
-          {previewStudent ? (
-            <div className="flex items-center justify-center p-1">
-              <A7DeviceSticker permit={previewStudent} showActions={false} />
-            </div>
-          ) : (
-            permitsToPrint.map(student => (
-              <div key={student.id} className="flex items-center justify-center p-0.5">
-                <A7DeviceSticker permit={student} showActions={false} />
+        {singlePrintMode && activePrintList[0] ? (
+          <div className="single-print-wrap">
+            <A7DeviceSticker permit={activePrintList[0]} showActions={false} />
+          </div>
+        ) : (
+          <div>
+            {printPages.map((pageStickers, pageIndex) => (
+              <div key={`print-page-${pageIndex}`} className="a4-print-page">
+                {pageStickers.map(student => (
+                  <div key={student.id} className="a4-sticker-slot">
+                    <div className="a4-sticker-scale">
+                      <A7DeviceSticker permit={student} showActions={false} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* TUTORIAL MAC ADDRESS / ID DEVICE MODAL */}
