@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { getAllCompetitions, getAllRegistrations } from '../services/competitionService';
 import { Competition, Registration, CurationColor } from '../types';
 import { LogIn, MapPin, Calendar as CalendarIcon, Users, ExternalLink, Trophy, Search, Filter, MonitorPlay } from 'lucide-react';
+import { AuthPortalModal } from '../components/auth/AuthPortalModal';
+import { AuthMode, AuthRoleIntent } from '../types/auth';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -48,7 +50,16 @@ const formatCuration = (curation: CurationColor) => {
 
 export function PublicHome() {
   const navigate = useNavigate();
-  const { currentUser, loginWithGoogle } = useAuth();
+  const { currentUser, userProfile, authGateStatus } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthMode>('LOGIN');
+  const [authModalRole, setAuthModalRole] = useState<AuthRoleIntent>('STUDENT');
+
+  const openAuthModal = (mode: AuthMode = 'LOGIN', role: AuthRoleIntent = 'STUDENT') => {
+    setAuthModalMode(mode);
+    setAuthModalRole(role);
+    setAuthModalOpen(true);
+  };
   
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -82,10 +93,12 @@ export function PublicHome() {
   const [sortBy, setSortBy] = useState('NEWEST');
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && authGateStatus === 'AUTHENTICATED' && userProfile) {
       navigate('/dashboard');
+    } else if (currentUser && authGateStatus !== 'UNAUTHENTICATED' && authGateStatus !== 'AUTHENTICATED') {
+      setAuthModalOpen(true);
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, authGateStatus, userProfile, navigate]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -182,10 +195,15 @@ export function PublicHome() {
           </div>
           <h1 className="text-xl font-bold tracking-tight text-slate-800">SOS System (Beta)</h1>
         </div>
-        <Button onClick={() => loginWithGoogle()} variant="default">
-          <LogIn className="h-4 w-4 mr-2" />
-          Login
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => openAuthModal('REGISTER', 'PARENT')} variant="outline" className="hidden sm:inline-flex whitespace-nowrap shrink-0">
+            Daftar
+          </Button>
+          <Button onClick={() => openAuthModal('LOGIN', 'STUDENT')} variant="default" className="whitespace-nowrap shrink-0">
+            <LogIn className="h-4 w-4 mr-2" />
+            Masuk / Daftar
+          </Button>
+        </div>
       </header>
       
       <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full space-y-12">
@@ -374,7 +392,7 @@ export function PublicHome() {
                         </div>
                       </CardContent>
                       <CardFooter className={`pt-4 border-t flex flex-col items-stretch gap-3 ${isGold ? 'border-amber-200' : isYellow ? 'border-yellow-200' : ''}`}>
-                        <Button className="w-full" onClick={(e) => { e.stopPropagation(); loginWithGoogle(); }}>
+                        <Button className="w-full" onClick={(e) => { e.stopPropagation(); openAuthModal('LOGIN', 'STUDENT'); }}>
                           Daftar Lomba
                         </Button>
                         <div className="w-full pt-2 border-t border-dashed">
@@ -461,13 +479,20 @@ export function PublicHome() {
             </div>
 
             <DialogFooter>
-              <Button onClick={() => loginWithGoogle()} className="w-full sm:w-auto">
-                Login untuk Daftar
+              <Button onClick={() => openAuthModal('LOGIN', 'STUDENT')} className="w-full sm:w-auto">
+                Masuk untuk Daftar
               </Button>
             </DialogFooter>
           </DialogContent>
         )}
       </Dialog>
+
+      <AuthPortalModal
+        open={authModalOpen}
+        onOpenChange={setAuthModalOpen}
+        defaultMode={authModalMode}
+        defaultRole={authModalRole}
+      />
 
       {showFullscreenDisplay && (
         <FullscreenCompetitionDisplay 

@@ -49,19 +49,103 @@ service cloud.firestore {
       );
     }
     
+    function isManagement() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['MANAGEMENT', 'management']
+        )
+      );
+    }
+
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isTeacher() {
        return isSignedIn() && 
               exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['TEACHER', 'teacher'];
+              getUserDoc().role in ['TEACHER', 'teacher'];
+    }
+
+    function isParent() {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserDoc().role in ['PARENT', 'parent'] &&
+             getUserDoc().get('isBlocked', false) != true;
+    }
+
+    function isParentOfStudent(studentId) {
+      return isParent() &&
+             'linkedStudentIds' in getUserDoc() &&
+             getUserDoc().linkedStudentIds is list &&
+             studentId in getUserDoc().linkedStudentIds;
     }
 
     // 3. Validation Helpers
     function isValidUserProfile(data) {
       return (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
              (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
-             (!('role' in data) || (data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'SOS', 'ADMIN_SOS', 'ADMIN_STUDENT', 'MANAGEMENT', 'admin', 'teacher', 'student', 'sos', 'admin_sos', 'admin_student', 'management'])) &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 256)) &&
+             (!('role' in data) || (data.role in ['ADMIN', 'TEACHER', 'STUDENT', 'SOS', 'ADMIN_SOS', 'ADMIN_STUDENT', 'MANAGEMENT', 'PARENT', 'admin', 'teacher', 'student', 'sos', 'admin_sos', 'admin_student', 'management', 'parent'])) &&
+             (!('linkedStudentIds' in data) || (data.linkedStudentIds is list && data.linkedStudentIds.size() <= 10)) &&
+             (!('linkedStudentNames' in data) || (data.linkedStudentNames is list && data.linkedStudentNames.size() <= 10)) &&
+             (!('relationship' in data) || (data.relationship in ['Ayah', 'Ibu', 'Wali'])) &&
+             (!('activeParentLinkId' in data) || (data.activeParentLinkId is string && data.activeParentLinkId.size() <= 128)) &&
+             (!('isBlocked' in data) || data.isBlocked is bool) &&
              (!('createdAt' in data) || (data.createdAt is number || data.createdAt is timestamp)) && 
              (!('updatedAt' in data) || (data.updatedAt is number || data.updatedAt is timestamp));
+    }
+
+    function isValidParentLink(data) {
+      return data.keys().hasAll(['id', 'parentEmail', 'parentName', 'relationship', 'studentId', 'studentName', 'studentIds', 'studentNames', 'approvalStatus', 'isActive', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'parentEmail', 'parentName', 'relationship', 'phoneWa', 'studentId', 'studentName', 'studentIds', 'studentNames', 'parentUid', 'approvalStatus', 'isActive', 'approvedBy', 'approvedAt', 'rejectionReason', 'createdBy', 'createdAt', 'updatedAt', 'lastLoginAt']) &&
+             isValidId(data.id) &&
+             data.parentEmail is string && data.parentEmail.size() >= 5 && data.parentEmail.size() <= 256 &&
+             data.parentName is string && data.parentName.size() >= 1 && data.parentName.size() <= 150 &&
+             data.relationship in ['Ayah', 'Ibu', 'Wali'] &&
+             (!('phoneWa' in data) || (data.phoneWa is string && data.phoneWa.size() <= 30)) &&
+             isValidId(data.studentId) &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 150 &&
+             data.studentIds is list && data.studentIds.size() == 1 && data.studentIds[0] == data.studentId &&
+             data.studentNames is list && data.studentNames.size() == 1 && data.studentNames[0] is string &&
+             (!('parentUid' in data) || (data.parentUid is string && data.parentUid.size() <= 128)) &&
+             data.approvalStatus in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             data.isActive is bool &&
+             (!('approvedBy' in data) || (data.approvedBy is string && data.approvedBy.size() <= 256)) &&
+             (!('approvedAt' in data) || data.approvedAt is number) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             data.createdBy is string && data.createdBy.size() <= 256 &&
+             data.createdAt is number &&
+             data.updatedAt is number &&
+             (!('lastLoginAt' in data) || data.lastLoginAt is number);
+    }
+
+    function isValidStudentParentClaim(data) {
+      return data.keys().hasAll(['studentId', 'linkId', 'status', 'updatedAt']) &&
+             data.keys().hasOnly(['studentId', 'linkId', 'status', 'updatedAt']) &&
+             isValidId(data.studentId) &&
+             isValidId(data.linkId) &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             data.updatedAt is number;
+    }
+
+    function isValidAdminRequest(data) {
+      return data.keys().hasAll(['id', 'uid', 'email', 'name', 'requestedRole', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'uid', 'email', 'name', 'requestedRole', 'notes', 'status', 'reviewedBy', 'reviewedAt', 'rejectionReason', 'createdAt', 'updatedAt']) &&
+             isValidId(data.id) &&
+             isValidId(data.uid) &&
+             data.email is string && data.email.size() >= 5 && data.email.size() <= 256 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+             data.requestedRole in ['ADMIN', 'ADMIN_SOS', 'ADMIN_STUDENT'] &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 256)) &&
+             (!('reviewedAt' in data) || data.reviewedAt is number) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             data.createdAt is number &&
+             data.updatedAt is number;
     }
 
     function isValidStudent(data) {
@@ -108,24 +192,160 @@ service cloud.firestore {
       allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTeacher());
       allow list: if isSignedIn() && (isAdmin() || isTeacher());
       
-      // Allow creation during sign-up. Cannot arbitrarily set admin role unless they already are or super admin
-      allow create: if isSignedIn() && isOwner(userId) && 
-                       isValidUserProfile(incoming()) && 
-                       (incoming().role in ['STUDENT', 'SOS', 'TEACHER', 'student', 'sos', 'teacher'] || 
-                        ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management', 'ADMIN_SOS', 'admin_sos', 'ADMIN_STUDENT', 'admin_student']) && isSuperAdmin()));
+      // Allow creation during sign-up. Students/Teachers require @semesta.sch.id; Parents must match an APPROVED & active parentLink.
+      allow create: if isSignedIn() && isValidUserProfile(incoming()) && (
+                       isManagement() ||
+                       (
+                         isOwner(userId) &&
+                         (
+                           (incoming().role in ['STUDENT', 'SOS', 'TEACHER', 'student', 'sos', 'teacher'] &&
+                             request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+                             !('linkedStudentIds' in incoming()) && !('activeParentLinkId' in incoming())) ||
+                           ((incoming().role in ['ADMIN', 'admin', 'MANAGEMENT', 'management', 'ADMIN_SOS', 'admin_sos', 'ADMIN_STUDENT', 'admin_student']) && isSuperAdmin()) ||
+                           (incoming().role in ['PARENT', 'parent'] &&
+                             request.auth.token.email_verified == true &&
+                             !request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+                             incoming().get('isBlocked', false) == false &&
+                             'activeParentLinkId' in incoming() &&
+                             isValidId(incoming().activeParentLinkId) &&
+                             exists(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)) &&
+                             get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.isActive == true &&
+                             get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.get('approvalStatus', 'APPROVED') == 'APPROVED' &&
+                             get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.parentEmail == request.auth.token.email.lower() &&
+                             'linkedStudentIds' in incoming() &&
+                             incoming().linkedStudentIds == get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.studentIds)
+                         )
+                       )
+                     );
       
-      // Updates: Admins can update anything. Users can update their own profile EXCEPT role (unless they are the master email / super admin, or migrating from STUDENT to SOS).
+      // Updates: Management/Admins can update users. Parents can only sync fields from their APPROVED active parentLink.
       allow update: if isSignedIn() && isValidUserProfile(incoming()) && (
+        isManagement() ||
         isAdmin() || 
-        (isOwner(userId) && (
+        (isOwner(userId) && isSuperAdmin()) ||
+        (isOwner(userId) && !(existing().role in ['PARENT', 'parent']) && (
           !('role' in incoming()) || 
           incoming().role == existing().role ||
           (existing().role in ['STUDENT', 'student'] && incoming().role in ['SOS', 'sos'])
-        )) ||
-        (isOwner(userId) && isSuperAdmin())
+        ) && !('linkedStudentIds' in incoming()) && !('activeParentLinkId' in incoming())) ||
+        (isOwner(userId) && existing().role in ['PARENT', 'parent'] &&
+          request.auth.token.email_verified == true &&
+          !request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+          incoming().role == existing().role &&
+          incoming().get('isBlocked', false) == existing().get('isBlocked', false) &&
+          'activeParentLinkId' in incoming() &&
+          isValidId(incoming().activeParentLinkId) &&
+          exists(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)) &&
+          get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.isActive == true &&
+          get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.get('approvalStatus', 'APPROVED') == 'APPROVED' &&
+          get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.parentEmail == request.auth.token.email.lower() &&
+          incoming().linkedStudentIds == get(/databases/$(database)/documents/parentLinks/$(incoming().activeParentLinkId)).data.studentIds)
       );
       
       allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // Parent / Guardian 1-to-1 Links & Registrations
+    match /parentLinks/{linkId} {
+      allow get: if isSignedIn() && isValidId(linkId) && (
+        isAdmin() ||
+        (request.auth.token.email_verified == true && existing().parentEmail == request.auth.token.email.lower())
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.token.email_verified == true && resource.data.parentEmail == request.auth.token.email.lower())
+      );
+      allow create: if isSignedIn() && isValidId(linkId) && isValidParentLink(incoming()) && incoming().id == linkId && (
+        isManagement() ||
+        isAdmin() ||
+        (
+          request.auth.token.email_verified == true &&
+          !request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+          incoming().parentEmail == request.auth.token.email.lower() &&
+          incoming().parentUid == request.auth.uid &&
+          incoming().approvalStatus == 'PENDING' &&
+          incoming().isActive == false &&
+          (!exists(/databases/$(database)/documents/studentParentClaims/$(incoming().studentId)) ||
+           get(/databases/$(database)/documents/studentParentClaims/$(incoming().studentId)).data.status == 'REJECTED') &&
+          existsAfter(/databases/$(database)/documents/studentParentClaims/$(incoming().studentId)) &&
+          getAfter(/databases/$(database)/documents/studentParentClaims/$(incoming().studentId)).data.linkId == linkId &&
+          getAfter(/databases/$(database)/documents/studentParentClaims/$(incoming().studentId)).data.status == 'PENDING'
+        )
+      );
+      allow update: if isSignedIn() && isValidId(linkId) && isValidParentLink(incoming()) &&
+                       incoming().id == existing().id &&
+                       incoming().createdAt == existing().createdAt && (
+        isManagement() ||
+        (request.auth.token.email_verified == true &&
+         existing().parentEmail == request.auth.token.email.lower() &&
+         existing().get('approvalStatus', 'APPROVED') == 'APPROVED' &&
+         existing().isActive == true &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['parentUid', 'lastLoginAt', 'updatedAt']) &&
+         incoming().parentUid == request.auth.uid)
+      );
+      allow delete: if isSignedIn() && isValidId(linkId) && (isManagement() || isAdmin());
+    }
+
+    // Zero-PII 1-to-1 Student Parent Claims
+    match /studentParentClaims/{studentId} {
+      allow get: if isSignedIn() && isValidId(studentId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(studentId) && isValidStudentParentClaim(incoming()) && incoming().studentId == studentId && (
+        isManagement() ||
+        isAdmin() ||
+        (
+          request.auth.token.email_verified == true &&
+          !request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+          incoming().status == 'PENDING' &&
+          existsAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)) &&
+          getAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)).data.parentUid == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)).data.approvalStatus == 'PENDING'
+        )
+      );
+      allow update: if isSignedIn() && isValidId(studentId) && isValidStudentParentClaim(incoming()) && incoming().studentId == studentId && (
+        isManagement() ||
+        isAdmin() ||
+        (
+          request.auth.token.email_verified == true &&
+          !request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+          incoming().status == 'PENDING' &&
+          existing().status == 'REJECTED' &&
+          existsAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)) &&
+          getAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)).data.parentUid == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/parentLinks/$(incoming().linkId)).data.approvalStatus == 'PENDING'
+        )
+      );
+      allow delete: if isSignedIn() && isValidId(studentId) && (isManagement() || isAdmin());
+    }
+
+    // Admin Access Registration Requests (Requires Management ACC)
+    match /adminRequests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) && (
+        isManagement() ||
+        existing().uid == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        isManagement() ||
+        resource.data.uid == request.auth.uid
+      );
+      allow create: if isSignedIn() && isValidId(requestId) && isValidAdminRequest(incoming()) &&
+                       incoming().id == requestId &&
+                       incoming().uid == request.auth.uid &&
+                       request.auth.token.email_verified == true &&
+                       request.auth.token.email.lower().matches('^.*@semesta\\.sch\\.id$') &&
+                       incoming().email == request.auth.token.email.lower() &&
+                       incoming().status == 'PENDING';
+      allow update: if isSignedIn() && isValidId(requestId) && isValidAdminRequest(incoming()) &&
+                       incoming().id == existing().id &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt && (
+        isManagement() ||
+        (existing().uid == request.auth.uid &&
+         existing().status == 'REJECTED' &&
+         incoming().status == 'PENDING' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['requestedRole', 'notes', 'status', 'updatedAt']))
+      );
+      allow delete: if isSignedIn() && isValidId(requestId) && isManagement();
     }
 
     // Students (Extended info)
@@ -189,8 +409,8 @@ service cloud.firestore {
 
     // Achievements
     match /achievements/{achievementId} {
-      allow get: if isSignedIn() && isValidId(achievementId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
-      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(achievementId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher() || isParentOfStudent(existing().studentId));
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid || isParentOfStudent(resource.data.studentId));
       
       allow write: if isSignedIn() && isValidId(achievementId) && isAdmin();
     }
@@ -220,8 +440,8 @@ service cloud.firestore {
 
     // Guidance Logs
     match /guidanceLogs/{logId} {
-      allow get: if isSignedIn() && isValidId(logId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher());
-      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(logId) && (existing().studentId == request.auth.uid || isAdmin() || isTeacher() || isParentOfStudent(existing().studentId));
+      allow list: if isSignedIn() && (isAdmin() || isTeacher() || resource.data.studentId == request.auth.uid || isParentOfStudent(resource.data.studentId));
       
       allow create: if isSignedIn() && isValidId(logId) && 
                        isValidGuidanceLog(incoming()) && 

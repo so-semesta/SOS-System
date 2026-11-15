@@ -8,7 +8,11 @@
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["ADMIN", "TEACHER", "STUDENT", "SOS", "ADMIN_SOS", "ADMIN_STUDENT", "MANAGEMENT", "admin", "teacher", "student", "sos", "admin_sos", "admin_student", "management"] },
+        "role": { "type": "string", "enum": ["ADMIN", "TEACHER", "STUDENT", "SOS", "ADMIN_SOS", "ADMIN_STUDENT", "MANAGEMENT", "PARENT", "admin", "teacher", "student", "sos", "admin_sos", "admin_student", "management", "parent"] },
+        "linkedStudentIds": { "type": "array", "items": { "type": "string" } },
+        "linkedStudentNames": { "type": "array", "items": { "type": "string" } },
+        "relationship": { "type": "string", "enum": ["Ayah", "Ibu", "Wali"] },
+        "activeParentLinkId": { "type": "string" },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
@@ -205,6 +209,65 @@
         "updatedBy": { "type": "string" }
       },
       "required": ["unit", "url", "fileName", "updatedAt"]
+    },
+    "parentLink": {
+      "title": "ParentLink",
+      "description": "1-to-1 parent/guardian whitelist and registration request linked to a single student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "parentEmail": { "type": "string" },
+        "parentName": { "type": "string" },
+        "relationship": { "type": "string", "enum": ["Ayah", "Ibu", "Wali"] },
+        "phoneWa": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentIds": { "type": "array", "items": { "type": "string" } },
+        "studentNames": { "type": "array", "items": { "type": "string" } },
+        "parentUid": { "type": "string" },
+        "approvalStatus": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "isActive": { "type": "boolean" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "number" },
+        "rejectionReason": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "lastLoginAt": { "type": "number" }
+      },
+      "required": ["id", "parentEmail", "parentName", "relationship", "studentId", "studentName", "studentIds", "studentNames", "approvalStatus", "isActive", "createdBy", "createdAt", "updatedAt"]
+    },
+    "studentParentClaim": {
+      "title": "StudentParentClaim",
+      "description": "Uniqueness lock ensuring 1 student can only be linked to 1 parent account (zero PII)",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "linkId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["studentId", "linkId", "status", "updatedAt"]
+    },
+    "adminRequest": {
+      "title": "AdminRequest",
+      "description": "Self-registration request for Admin access awaiting Management approval",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "requestedRole": { "type": "string", "enum": ["ADMIN", "ADMIN_SOS", "ADMIN_STUDENT"] },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "reviewedBy": { "type": "string" },
+        "reviewedAt": { "type": "number" },
+        "rejectionReason": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "uid", "email", "name", "requestedRole", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -243,6 +306,18 @@
     "devicePermitLetters/{unit}": {
       "schema": { "$ref": "#/entities/devicePermitLetter" },
       "description": "Active official PDF permit letters for SMP and SMA units"
+    },
+    "parentLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/parentLink" },
+      "description": "1-to-1 parent account registrations and Management approval status"
+    },
+    "studentParentClaims/{studentId}": {
+      "schema": { "$ref": "#/entities/studentParentClaim" },
+      "description": "Zero-PII uniqueness claim per student for 1-to-1 parent linking"
+    },
+    "adminRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/adminRequest" },
+      "description": "Admin role access requests awaiting Management approval"
     }
   }
 }

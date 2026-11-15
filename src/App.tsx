@@ -31,10 +31,13 @@ import { PublicPermitVerification } from './pages/public/PublicPermitVerificatio
 import { PublicPermitPdfViewer } from './pages/public/PublicPermitPdfViewer';
 import { StudentDevicePermit } from './pages/student/StudentDevicePermit';
 import { AdminDevicePermits } from './pages/admin/AdminDevicePermits';
+import { ParentsManagement } from './pages/admin/ParentsManagement';
+import { ParentPortal } from './pages/parent/ParentPortal';
 
 // Komponen helper agar Dashboard melakukan hal yang tepat berdasarkan role
 const RootRedirect = () => {
   const { userRole } = useAuth();
+  if (userRole === UserRole.PARENT) return <Navigate to="/parent" replace />;
   if (userRole === UserRole.STUDENT) return <Navigate to="/home" replace />;
   if (userRole === UserRole.ADMIN || userRole === UserRole.MANAGEMENT) return <Navigate to="/home" replace />;
   return <Navigate to="/home" replace />;
@@ -47,7 +50,7 @@ export default function App() {
         <Routes>
           {/* PUBLIC ROUTES (TANPA LOGIN - AKSES QR CODE RESMI) */}
           <Route path="/" element={<PublicHome />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/permit/:id" element={<PublicPermitVerification />} />
           <Route path="/permit" element={<PublicPermitVerification />} />
           <Route path="/permit/pdf/:unit" element={<PublicPermitPdfViewer />} />
@@ -57,8 +60,17 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<MainLayout />}>
               <Route path="/dashboard" element={<RootRedirect />} />
-              <Route path="/home" element={<InternalHome />} />
-              <Route path="/leaderboard" element={<Leaderboard />} />
+
+              {/* INTERNAL HOME & LEADERBOARD (NON-PARENT) */}
+              <Route element={<ProtectedRoute allowedRoles={[UserRole.SOS, UserRole.STUDENT, UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT]} />}>
+                <Route path="/home" element={<InternalHome />} />
+                <Route path="/leaderboard" element={<Leaderboard />} />
+              </Route>
+
+              {/* PARENT PORTAL ROUTES */}
+              <Route element={<ProtectedRoute allowedRoles={[UserRole.PARENT]} />}>
+                <Route path="/parent" element={<ParentPortal />} />
+              </Route>
               
               {/* STUDENT & SOS ROUTES */}
               <Route element={<ProtectedRoute allowedRoles={[UserRole.SOS, UserRole.STUDENT]} />}>
@@ -74,6 +86,7 @@ export default function App() {
               <Route element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT]} />}>
                 <Route path="/analytics" element={<Dashboard />} />
                 <Route path="/admin/students" element={<StudentsDirectory />} />
+                <Route path="/admin/parents" element={<ParentsManagement />} />
                 <Route path="/admin/competitions" element={<CompetitionsAdmin />} />
                 <Route path="/admin/registrations" element={<RegistrationApprovals />} />
                 <Route path="/admin/guidance" element={<GuidanceMonitor />} />

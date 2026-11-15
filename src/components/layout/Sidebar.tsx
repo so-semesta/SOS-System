@@ -10,7 +10,8 @@ import {
   Settings, 
   BarChart, 
   Trophy,
-  Laptop
+  Laptop,
+  UserCheck
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserRole } from '../../types/auth';
@@ -31,6 +32,9 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     { name: 'Dashboard Analitik', icon: BarChart, path: '/analytics', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     { name: 'Leaderboard', icon: Trophy, path: '/leaderboard', roles: [UserRole.SOS, UserRole.STUDENT, UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     
+    // PARENT
+    { name: 'Portal Orang Tua', icon: UserCheck, path: '/parent', roles: [UserRole.PARENT] },
+
     // STUDENT & SOS
     { name: 'Profil Saya', icon: Users, path: '/profile', roles: [UserRole.SOS, UserRole.STUDENT] },
     { name: 'Izin Device', icon: Laptop, path: '/device-permit', roles: [UserRole.SOS, UserRole.STUDENT] },
@@ -42,6 +46,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     // ADMIN & MANAGEMENT
     { name: 'Izin Device', icon: Laptop, path: '/admin/device-permits', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     { name: 'Manajemen Siswa', icon: Users, path: '/admin/students', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
+    { name: 'Akun Orang Tua', icon: UserCheck, path: '/admin/parents', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     { name: 'Manajemen Lomba', icon: Trophy, path: '/admin/competitions', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     { name: 'Perizinan Lomba', icon: CalendarDays, path: '/admin/registrations', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },
     { name: 'Review Guidance', icon: BookOpen, path: '/admin/guidance', roles: [UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT] },

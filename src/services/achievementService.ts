@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, query, orderBy, getDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Achievement, CurationColor, MedalType } from '../types';
 import { removeUndefined } from '../lib/utils';
@@ -64,8 +64,8 @@ export const getAllAchievements = async (): Promise<Achievement[]> => {
 };
 
 export const getStudentAchievements = async (studentId: string): Promise<Achievement[]> => {
-  const q = query(collection(db, 'achievements')); // Can use a where clause if needed, but doing all for now depending on indexing
+  const q = query(collection(db, 'achievements'), where('studentId', '==', studentId));
   const querySnapshot = await getDocs(q);
-  const allAchievements = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Achievement);
-  return allAchievements.filter(ach => ach.studentId === studentId);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Achievement);
 };
+

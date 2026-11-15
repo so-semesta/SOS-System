@@ -220,3 +220,36 @@ export interface ChatMessage {
   imageUrl?: string;
   createdAt: number;
 }
+
+export type ParentRelationship = 'Ayah' | 'Ibu' | 'Wali';
+export type ParentApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface ParentLink {
+  id: string;
+  parentEmail: string;
+  parentName: string; // Format: "Parent [Nama Siswa]"
+  relationship: ParentRelationship;
+  phoneWa?: string;
+  studentId: string;
+  studentName: string;
+  studentIds: string[];
+  studentNames: string[];
+  parentUid?: string;
+  approvalStatus: ParentApprovalStatus;
+  isActive: boolean;
+  approvedBy?: string;
+  approvedAt?: number;
+  rejectionReason?: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  lastLoginAt?: number;
+}
+
+export interface StudentParentClaim {
+  studentId: string;
+  linkId: string;
+  status: ParentApprovalStatus;
+  updatedAt: number;
+}
+

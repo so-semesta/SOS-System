@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { NotificationsWidget } from './NotificationsWidget';
+import { isParentRole } from '../../types/auth';
 
 interface NavbarProps {
   toggleSidebar: () => void;
@@ -26,10 +27,12 @@ export function Navbar({ toggleSidebar }: NavbarProps) {
       <div className="flex flex-1 items-center justify-end gap-4 md:justify-end">
         {currentUser ? (
           <div className="flex items-center gap-4">
-            <NotificationsWidget />
+            {!isParentRole(userProfile?.role) && <NotificationsWidget />}
             <div className="hidden flex-col items-end sm:flex">
               <span className="text-sm font-medium">{userProfile?.name || currentUser.email}</span>
-              <span className="text-xs text-muted-foreground capitalize">{userProfile?.role || 'User'}</span>
+              <span className="text-xs text-muted-foreground capitalize">
+                {isParentRole(userProfile?.role) ? 'Orang Tua / Wali' : (userProfile?.role || 'User')}
+              </span>
             </div>
             <Button variant="ghost" size="icon" onClick={handleLogout}>
               <LogOut className="h-5 w-5" />

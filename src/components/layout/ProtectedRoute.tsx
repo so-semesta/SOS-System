@@ -8,13 +8,13 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
-  const { currentUser, userRole, loading } = useAuth();
+  const { currentUser, userProfile, userRole, authGateStatus, loading } = useAuth();
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>;
   }
 
-  if (!currentUser) {
+  if (!currentUser || authGateStatus !== 'AUTHENTICATED' || !userProfile) {
     return <Navigate to="/login" replace />;
   }
 
