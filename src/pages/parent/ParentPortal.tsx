@@ -104,6 +104,13 @@ function formatFieldSummary(field?: string[] | string): string {
   return `${list.slice(0, 3).join(', ')} +${list.length - 3} bidang`;
 }
 
+function safeHttpUrl(url?: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return null;
+}
+
 export function ParentPortal() {
   const { userProfile } = useAuth();
   const linkedStudentIds = userProfile?.linkedStudentIds || [];
@@ -837,6 +844,10 @@ export function ParentPortal() {
                     );
                   })}
                 </div>
+              ) : bundle && bundle.cvAchievements.length > 0 ? (
+                <div className="px-6 py-4 text-xs text-slate-500 bg-slate-50/40">
+                  Belum ada medali resmi terverifikasi pembina SOS.
+                </div>
               ) : (
                 <div className="p-8 text-center space-y-2">
                   <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
@@ -846,6 +857,77 @@ export function ParentPortal() {
                   <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
                     Capaian medali dan poin Olimpiade anak akan otomatis tampil di sini setelah diverifikasi pembina.
                   </p>
+                </div>
+              )}
+
+              {bundle && bundle.cvAchievements.length > 0 && (
+                <div className="border-t border-slate-200/80">
+                  <div className="flex items-center justify-between gap-2 bg-slate-50/70 px-6 py-2.5 border-b border-slate-100">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Portofolio Mandiri Siswa (Khusus CV · Tanpa Poin)
+                    </span>
+                    <span className="text-xs text-slate-500 tabular-nums shrink-0">
+                      {bundle.cvAchievements.length} Entri
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {bundle.cvAchievements.map((item) => {
+                      const medal = MEDAL_CONFIG[item.medalType] || {
+                        label: item.medalType,
+                        colorClass: 'text-slate-700',
+                        iconBg: 'bg-slate-50 text-slate-600 border-slate-200',
+                      };
+                      const displayAchievement = item.customAchievementLabel?.trim() || medal.label;
+                      const certUrl = safeHttpUrl(item.certificateUrl);
+                      return (
+                        <div
+                          key={item.id}
+                          className="px-6 py-3.5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div
+                              className={cn(
+                                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border mt-0.5',
+                                medal.iconBg
+                              )}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="text-sm font-medium text-slate-900">
+                                {item.competitionTitle}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500">
+                                <span className={cn('font-semibold', medal.colorClass)}>
+                                  {displayAchievement}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span>{item.organizer}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>Tingkat {item.level}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">{item.year}</span>
+                              </div>
+                              {certUrl && (
+                                <a
+                                  href={certUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline pt-0.5"
+                                >
+                                  Sertifikat
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-xs font-medium text-slate-400 whitespace-nowrap shrink-0">
+                            Khusus CV
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </section>

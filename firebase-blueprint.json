@@ -268,6 +268,45 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "uid", "email", "name", "requestedRole", "status", "createdAt", "updatedAt"]
+    },
+    "studentCvAchievement": {
+      "title": "StudentCvAchievement",
+      "description": "Student self-entered historical or external competition achievement for CV and portfolio (does not affect Leaderboard points)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "competitionTitle": { "type": "string" },
+        "organizer": { "type": "string" },
+        "field": { "type": "string" },
+        "level": { "type": "string", "enum": ["Sekolah", "Kota/Kabupaten", "Provinsi", "Nasional", "Internasional"] },
+        "medalType": { "type": "string", "enum": ["GOLD", "SILVER", "BRONZE", "FINALS", "PARTICIPANT"] },
+        "customAchievementLabel": { "type": "string" },
+        "year": { "type": "number" },
+        "eventDate": { "type": "string" },
+        "certificateUrl": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "studentId", "competitionTitle", "organizer", "field", "level", "medalType", "year", "createdAt", "updatedAt"]
+    },
+    "dailyReminderLog": {
+      "title": "DailyReminderLog",
+      "description": "Persistent status record of daily guidance reminder email dispatches per WIB date",
+      "type": "object",
+      "properties": {
+        "dateKey": { "type": "string" },
+        "reportSent": { "type": "boolean" },
+        "lastSentAt": { "type": "number" },
+        "lastSentMode": { "type": "string", "enum": ["AUTO", "MANUAL"] },
+        "lastSentBy": { "type": "string" },
+        "sentCount": { "type": "number" },
+        "failedCount": { "type": "number" },
+        "recipientEmails": { "type": "array", "items": { "type": "string" } },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["dateKey", "reportSent", "lastSentAt", "lastSentMode", "sentCount", "updatedAt"]
     }
   },
   "firestore": {
@@ -318,6 +357,14 @@
     "adminRequests/{requestId}": {
       "schema": { "$ref": "#/entities/adminRequest" },
       "description": "Admin role access requests awaiting Management approval"
+    },
+    "studentCvAchievements/{cvAchievementId}": {
+      "schema": { "$ref": "#/entities/studentCvAchievement" },
+      "description": "Manual student portfolio achievements for CV printing without Leaderboard point impact"
+    },
+    "dailyReminderLogs/{dateKey}": {
+      "schema": { "$ref": "#/entities/dailyReminderLog" },
+      "description": "Persistent daily reminder sent status log per dateKey (YYYY-MM-DD WIB)"
     }
   }
 }

@@ -17,6 +17,7 @@ import {
   ParentRelationship,
   Registration,
   Student,
+  StudentCvAchievement,
   StudentParentClaim,
 } from '../types';
 import { UserRole } from '../types/auth';
@@ -24,6 +25,7 @@ import { getFriendlyDisplayName, isRawId, removeUndefined } from '../lib/utils';
 import { getStudentProfile } from './studentService';
 import { getAllCompetitions, getStudentRegistrations } from './competitionService';
 import { getStudentAchievements } from './achievementService';
+import { getStudentCvAchievements } from './cvAchievementService';
 import {
   DevicePermitLetter,
   DevicePermitStudent,
@@ -145,6 +147,7 @@ export interface ParentChildBundle {
   registrations: Registration[];
   competitionsMap: Record<string, Competition>;
   achievements: Achievement[];
+  cvAchievements: StudentCvAchievement[];
   guidanceSummaries: ParentGuidanceSummary[];
 }
 
@@ -723,16 +726,25 @@ export async function getParentPortalChildBundle(
   studentId: string,
   fallbackStudentName?: string
 ): Promise<ParentChildBundle> {
-  const [student, allPermits, letters, registrations, competitions, achievements, guidanceSummaries] =
-    await Promise.all([
-      getStudentProfile(studentId).catch(() => null),
-      getAllDevicePermits().catch(() => []),
-      getDevicePermitLetters().catch(() => null),
-      getStudentRegistrations(studentId).catch(() => []),
-      getAllCompetitions().catch(() => []),
-      getStudentAchievements(studentId).catch(() => []),
-      getStudentGuidanceSummariesForParent(studentId).catch(() => []),
-    ]);
+  const [
+    student,
+    allPermits,
+    letters,
+    registrations,
+    competitions,
+    achievements,
+    cvAchievements,
+    guidanceSummaries,
+  ] = await Promise.all([
+    getStudentProfile(studentId).catch(() => null),
+    getAllDevicePermits().catch(() => []),
+    getDevicePermitLetters().catch(() => null),
+    getStudentRegistrations(studentId).catch(() => []),
+    getAllCompetitions().catch(() => []),
+    getStudentAchievements(studentId).catch(() => []),
+    getStudentCvAchievements(studentId).catch(() => []),
+    getStudentGuidanceSummariesForParent(studentId).catch(() => []),
+  ]);
 
   const displayName =
     student?.fullName || fallbackStudentName || 'Siswa Olimpiade Semesta';
@@ -758,6 +770,9 @@ export async function getParentPortalChildBundle(
   const sortedAchievements = [...achievements].sort(
     (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
   );
+  const sortedCvAchievements = [...cvAchievements].sort(
+    (a, b) => (b.year || 0) - (a.year || 0) || (b.createdAt || 0) - (a.createdAt || 0)
+  );
 
   return {
     studentId,
@@ -768,6 +783,7 @@ export async function getParentPortalChildBundle(
     registrations: sortedRegistrations,
     competitionsMap,
     achievements: sortedAchievements,
+    cvAchievements: sortedCvAchievements,
     guidanceSummaries,
   };
 }

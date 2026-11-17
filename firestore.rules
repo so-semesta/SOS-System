@@ -182,6 +182,25 @@ service cloud.firestore {
              data.createdAt is number;
     }
 
+    function isValidStudentCvAchievement(data) {
+      return data.keys().hasAll(['id', 'studentId', 'competitionTitle', 'organizer', 'field', 'level', 'medalType', 'year', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'studentId', 'competitionTitle', 'organizer', 'field', 'level', 'medalType', 'customAchievementLabel', 'year', 'eventDate', 'certificateUrl', 'notes', 'createdAt', 'updatedAt']) &&
+             isValidId(data.id) &&
+             isValidId(data.studentId) &&
+             data.competitionTitle is string && data.competitionTitle.size() >= 1 && data.competitionTitle.size() <= 256 &&
+             data.organizer is string && data.organizer.size() >= 1 && data.organizer.size() <= 200 &&
+             data.field is string && data.field.size() >= 1 && data.field.size() <= 150 &&
+             data.level in ['Sekolah', 'Kota/Kabupaten', 'Provinsi', 'Nasional', 'Internasional'] &&
+             data.medalType in ['GOLD', 'SILVER', 'BRONZE', 'FINALS', 'PARTICIPANT'] &&
+             (!('customAchievementLabel' in data) || (data.customAchievementLabel is string && data.customAchievementLabel.size() <= 150)) &&
+             data.year is number && data.year >= 2000 && data.year <= 2100 &&
+             (!('eventDate' in data) || (data.eventDate is string && data.eventDate.size() <= 32)) &&
+             (!('certificateUrl' in data) || (data.certificateUrl is string && data.certificateUrl.size() <= 1000)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+             data.createdAt is number &&
+             data.updatedAt is number;
+    }
+
 
     // ==========================================
     // 4. Collection Rules
@@ -415,6 +434,35 @@ service cloud.firestore {
       allow write: if isSignedIn() && isValidId(achievementId) && isAdmin();
     }
 
+    // Student Manual CV Achievements (Option A: student-owned portfolio, no Leaderboard point impact)
+    match /studentCvAchievements/{cvAchievementId} {
+      allow get: if isSignedIn() && isValidId(cvAchievementId) && (
+        existing().studentId == request.auth.uid ||
+        isAdmin() ||
+        isTeacher() ||
+        isParentOfStudent(existing().studentId)
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        isTeacher() ||
+        resource.data.studentId == request.auth.uid ||
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && isValidId(cvAchievementId) &&
+                       isValidStudentCvAchievement(incoming()) &&
+                       incoming().id == cvAchievementId &&
+                       (incoming().studentId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidId(cvAchievementId) &&
+                       isValidStudentCvAchievement(incoming()) &&
+                       incoming().id == existing().id &&
+                       incoming().studentId == existing().studentId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (existing().studentId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(cvAchievementId) && (
+        existing().studentId == request.auth.uid || isAdmin()
+      );
+    }
+
     // OSN
     match /osn_announcements/{docId} {
       allow read: if isSignedIn();
@@ -453,6 +501,13 @@ service cloud.firestore {
                        (isAdmin() || (existing().studentId == request.auth.uid && incoming().studentId == existing().studentId));
                        
       allow delete: if isSignedIn() && isValidId(logId) && (isAdmin() || existing().studentId == request.auth.uid);
+    }
+
+    // Daily Reminder Sent Status Logs (Admin-only tracking per WIB date)
+    match /dailyReminderLogs/{dateKey} {
+      allow get, list: if isSignedIn() && isAdmin();
+      allow create, update: if isSignedIn() && isValidId(dateKey) && isAdmin() && isValidDailyReminderLog(incoming()) && incoming().dateKey == dateKey;
+      allow delete: if isSignedIn() && isValidId(dateKey) && isAdmin();
     }
 
     function isValidDevicePermitLetter(data) {

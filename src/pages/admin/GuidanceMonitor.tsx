@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Search, Trash2, Download, BarChart2, Bell, Mail } from 'lucide-react';
+import { Search, Trash2, Download, BarChart2, Bell, Mail, CheckCircle2, Clock } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { toast } from 'sonner';
@@ -19,6 +19,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { format } from 'date-fns';
 import { isRawId, getFriendlyDisplayName } from '../../lib/utils';
 import { AdminReminderBroadcastDialog } from '../../components/reminders/AdminReminderBroadcastDialog';
+import {
+  DailyStatusResponse,
+  formatWibTime,
+  getDailyReminderStatus,
+  syncDailyReminderSnapshot,
+} from '../../services/emailReminderService';
 
 
 
@@ -53,6 +59,7 @@ export function GuidanceMonitor() {
   const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('ALL');
   const [showAllLogs, setShowAllLogs] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [dailyStatus, setDailyStatus] = useState<DailyStatusResponse | null>(null);
 
   // Role segregation & Sortir
   const initialRoleFilter = userRole === UserRole.ADMIN_STUDENT ? 'STUDENT' : 'SOS';
@@ -155,8 +162,22 @@ export function GuidanceMonitor() {
     }
   };
 
+  const refreshDailyStatus = async () => {
+    try {
+      const statusData = await getDailyReminderStatus();
+      setDailyStatus(statusData);
+    } catch (err) {
+      console.warn('Failed loading daily reminder status:', err);
+    }
+  };
+
   useEffect(() => {
     fetchData(showAllLogs);
+    void refreshDailyStatus();
+    const timer = setInterval(() => {
+      void refreshDailyStatus();
+    }, 60000);
+    return () => clearInterval(timer);
   }, [showAllLogs, userRole]);
 
   const triggerDelete = (id: string) => {
@@ -332,6 +353,16 @@ export function GuidanceMonitor() {
       }));
   }, [dropdownStudents, logs]);
 
+  // Sync today's unsubmitted student snapshot to server so automated 20:30 WIB scheduler uses live targets
+  useEffect(() => {
+    if (loading) return;
+    syncDailyReminderSnapshot(unsubmittedStudentsToday, 'GuidanceMonitor')
+      .then(() => refreshDailyStatus())
+      .catch(() => {});
+  }, [loading, unsubmittedStudentsToday]);
+
+  const isReminderSentToday = Boolean(dailyStatus?.status?.reportSent);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -344,7 +375,11 @@ export function GuidanceMonitor() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
-          <AdminReminderBroadcastDialog unsubmittedStudents={unsubmittedStudentsToday} />
+          <AdminReminderBroadcastDialog
+            unsubmittedStudents={unsubmittedStudentsToday}
+            dailyStatus={dailyStatus}
+            onStatusUpdated={refreshDailyStatus}
+          />
 
           {!isRoleLocked ? (
             <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -383,27 +418,86 @@ export function GuidanceMonitor() {
       </div>
 
       {unsubmittedStudentsToday.length > 0 && (
-        <div className="bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div
+          className={
+            isReminderSentToday
+              ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs'
+              : 'bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs'
+          }
+        >
           <div className="flex items-start gap-3">
-            <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-700 dark:text-amber-300 shrink-0">
-              <Bell className="w-5 h-5 text-amber-600 animate-bounce" />
+            <div
+              className={
+                isReminderSentToday
+                  ? 'p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg text-emerald-700 dark:text-emerald-300 shrink-0'
+                  : 'p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-700 dark:text-amber-300 shrink-0'
+              }
+            >
+              {isReminderSentToday ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              ) : (
+                <Bell className="w-5 h-5 text-amber-600" />
+              )}
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-amber-950 dark:text-amber-100 flex items-center gap-2">
-                Pengingat Harian: {unsubmittedStudentsToday.length} Siswa Belum Mengisi Laporan Hari Ini
-              </h4>
-              <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
-                Kirim pengingat email massal, notifikasi in-app, atau broadcast WhatsApp beserta agenda perlombaan pekan ini.
+              <div className="flex flex-wrap items-center gap-2">
+                <h4
+                  className={
+                    isReminderSentToday
+                      ? 'font-semibold text-sm text-emerald-950 dark:text-emerald-100'
+                      : 'font-semibold text-sm text-amber-950 dark:text-amber-100'
+                  }
+                >
+                  {isReminderSentToday
+                    ? `Pengingat Harian Sudah Dikirim · ${unsubmittedStudentsToday.length} Siswa Masih Belum Mengisi`
+                    : `Pengingat Harian: ${unsubmittedStudentsToday.length} Siswa Belum Mengisi Laporan Hari Ini`}
+                </h4>
+                {isReminderSentToday ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 tabular-nums">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Terkirim {formatWibTime(dailyStatus?.status?.lastSentAt)} WIB ·{' '}
+                    {dailyStatus?.status?.lastSentMode === 'AUTO' ? 'Otomatis' : 'Manual'} (
+                    {dailyStatus?.status?.totalSentCount || 0} siswa)
+                  </span>
+                ) : dailyStatus?.config?.autoScheduleEnabled ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 tabular-nums">
+                    <Clock className="w-3 h-3" />
+                    Terjadwal Otomatis {dailyStatus.config.autoScheduleTime} WIB
+                  </span>
+                ) : null}
+              </div>
+              <p
+                className={
+                  isReminderSentToday
+                    ? 'text-xs text-emerald-800 dark:text-emerald-300 mt-0.5'
+                    : 'text-xs text-amber-800 dark:text-amber-300 mt-0.5'
+                }
+              >
+                {isReminderSentToday
+                  ? 'Email pengingat hari ini sudah dikirimkan. Anda dapat melihat status per siswa atau mengirim ulang bila diperlukan.'
+                  : 'Kirim pengingat email massal, notifikasi in-app, atau broadcast WhatsApp beserta agenda perlombaan pekan ini.'}
               </p>
             </div>
           </div>
           <div className="shrink-0">
             <AdminReminderBroadcastDialog
               unsubmittedStudents={unsubmittedStudentsToday}
+              dailyStatus={dailyStatus}
+              onStatusUpdated={refreshDailyStatus}
               trigger={
-                <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white text-xs shadow-xs flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant={isReminderSentToday ? 'outline' : 'default'}
+                  className={
+                    isReminderSentToday
+                      ? 'border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50 text-xs flex items-center gap-1.5 whitespace-nowrap shrink-0'
+                      : 'bg-amber-600 hover:bg-amber-700 text-white text-xs shadow-xs flex items-center gap-1.5 whitespace-nowrap shrink-0'
+                  }
+                >
                   <Mail className="w-3.5 h-3.5" />
-                  Kirim Pengingat & Email ({unsubmittedStudentsToday.length} Siswa)
+                  {isReminderSentToday
+                    ? 'Detail Pengiriman / Kirim Ulang'
+                    : `Kirim Pengingat & Email (${unsubmittedStudentsToday.length} Siswa)`}
                 </Button>
               }
             />

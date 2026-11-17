@@ -253,3 +253,26 @@ export interface StudentParentClaim {
   updatedAt: number;
 }
 
+export type CompetitionLevel =
+  | 'Sekolah'
+  | 'Kota/Kabupaten'
+  | 'Provinsi'
+  | 'Nasional'
+  | 'Internasional';
+
+export interface StudentCvAchievement {
+  id: string;
+  studentId: string;
+  competitionTitle: string;
+  organizer: string;
+  field: string;
+  level: CompetitionLevel;
+  medalType: MedalType;
+  customAchievementLabel?: string;
+  year: number;
+  eventDate?: string;
+  certificateUrl?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}

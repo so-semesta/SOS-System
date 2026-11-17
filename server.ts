@@ -6,10 +6,17 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import {
+  EmailConfig,
   loadEmailConfig,
   saveEmailConfig,
   createTransporter,
   generateHtmlEmail,
+  getWibTimeInfo,
+  loadDailySnapshot,
+  saveDailySnapshot,
+  markStudentSubmittedInSnapshot,
+  loadDailyReminderStatus,
+  recordDailyReminderDispatch,
 } from "./serverEmail";
 
 dotenv.config();
@@ -159,23 +166,33 @@ async function startServer() {
 
   // --- AUTOMATED EMAIL REMINDER API ROUTES ---
 
+  const sanitizeConfigResponse = (config: EmailConfig) => ({
+    smtpHost: config.smtpHost,
+    smtpPort: config.smtpPort,
+    smtpSecure: config.smtpSecure,
+    smtpUser: config.smtpUser,
+    fromName: config.fromName,
+    fromEmail: config.fromEmail,
+    autoScheduleEnabled: config.autoScheduleEnabled,
+    autoScheduleTime: config.autoScheduleTime,
+    lastAutoSentDate: config.lastAutoSentDate,
+    lastAutoSentAt: config.lastAutoSentAt,
+    lastAutoSentCount: config.lastAutoSentCount,
+    lastAutoFailedCount: config.lastAutoFailedCount,
+    lastAutoStatus: config.lastAutoStatus,
+    lastAutoMessage: config.lastAutoMessage,
+    lastManualSentDate: config.lastManualSentDate,
+    lastManualSentAt: config.lastManualSentAt,
+    lastManualSentCount: config.lastManualSentCount,
+    lastManualSentBy: config.lastManualSentBy,
+    hasStoredPassword: Boolean(config.smtpPass && config.smtpPass.length > 0),
+  });
+
   // 1. Get Email Configuration (sanitized, hides real password)
   app.get("/api/notifications/email-config", (req, res) => {
     try {
       const config = loadEmailConfig();
-      res.json({
-        smtpHost: config.smtpHost,
-        smtpPort: config.smtpPort,
-        smtpSecure: config.smtpSecure,
-        smtpUser: config.smtpUser,
-        fromName: config.fromName,
-        fromEmail: config.fromEmail,
-        autoScheduleEnabled: config.autoScheduleEnabled,
-        autoScheduleTime: config.autoScheduleTime,
-        lastAutoSentDate: config.lastAutoSentDate,
-        lastAutoSentCount: config.lastAutoSentCount,
-        hasStoredPassword: Boolean(config.smtpPass && config.smtpPass.length > 0),
-      });
+      res.json(sanitizeConfigResponse(config));
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Gagal membaca konfigurasi email" });
     }
@@ -184,22 +201,108 @@ async function startServer() {
   // 2. Save Email Configuration
   app.post("/api/notifications/email-config", (req, res) => {
     try {
-      const updated = saveEmailConfig(req.body);
-      res.json({
-        smtpHost: updated.smtpHost,
-        smtpPort: updated.smtpPort,
-        smtpSecure: updated.smtpSecure,
-        smtpUser: updated.smtpUser,
-        fromName: updated.fromName,
-        fromEmail: updated.fromEmail,
-        autoScheduleEnabled: updated.autoScheduleEnabled,
-        autoScheduleTime: updated.autoScheduleTime,
-        lastAutoSentDate: updated.lastAutoSentDate,
-        lastAutoSentCount: updated.lastAutoSentCount,
-        hasStoredPassword: Boolean(updated.smtpPass && updated.smtpPass.length > 0),
-      });
+      const current = loadEmailConfig();
+      const incomingBody = req.body || {};
+      const patch: Partial<EmailConfig> = { ...incomingBody };
+
+      // If user explicitly updated autoScheduleTime to a future WIB time today, allow re-trigger today
+      if (
+        typeof incomingBody.autoScheduleTime === "string" &&
+        incomingBody.autoScheduleTime !== current.autoScheduleTime
+      ) {
+        const { dateKeyWIB, minutesSinceMidnight } = getWibTimeInfo();
+        const [h, m] = incomingBody.autoScheduleTime.split(":").map(Number);
+        const newTargetMins = (Number(h) || 0) * 60 + (Number(m) || 0);
+        if (current.lastAutoSentDate === dateKeyWIB && newTargetMins > minutesSinceMidnight) {
+          patch.lastAutoSentDate = undefined;
+          patch.lastAutoStatus = undefined;
+          patch.lastAutoMessage = undefined;
+        }
+      }
+
+      const updated = saveEmailConfig(patch);
+      res.json(sanitizeConfigResponse(updated));
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Gagal menyimpan konfigurasi email" });
+    }
+  });
+
+  // 2b. Daily Reminder Status (WIB today)
+  app.get("/api/notifications/daily-status", (req, res) => {
+    try {
+      const { dateKeyWIB, formattedDateWIB, timeWIB } = getWibTimeInfo();
+      const config = loadEmailConfig();
+      const status = loadDailyReminderStatus(dateKeyWIB);
+      const snapshot = loadDailySnapshot();
+      const activeSnapshotCount =
+        snapshot && snapshot.dateKeyWIB === dateKeyWIB
+          ? snapshot.recipients.filter(
+              (r) =>
+                r.email &&
+                r.email.includes("@") &&
+                !snapshot.submittedStudentIds.includes(r.userId || r.id)
+            ).length
+          : 0;
+
+      res.json({
+        dateKeyWIB,
+        formattedDateWIB,
+        currentTimeWIB: timeWIB,
+        status,
+        snapshotCount: activeSnapshotCount,
+        snapshotUpdatedAt: snapshot?.dateKeyWIB === dateKeyWIB ? snapshot.updatedAt : null,
+        config: sanitizeConfigResponse(config),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Gagal memuat status pengingat harian" });
+    }
+  });
+
+  // 2c. Sync Daily Unsubmitted Students Snapshot from Admin GuidanceMonitor
+  app.post("/api/notifications/sync-daily-snapshot", (req, res) => {
+    try {
+      const { recipients, syncedBy } = req.body || {};
+      if (!Array.isArray(recipients)) {
+        return res.status(400).json({ error: "recipients harus berupa array." });
+      }
+      const { dateKeyWIB } = getWibTimeInfo();
+      const saved = saveDailySnapshot(dateKeyWIB, recipients, syncedBy);
+      const activeCount = saved.recipients.filter(
+        (r) =>
+          r.email &&
+          r.email.includes("@") &&
+          !saved.submittedStudentIds.includes(r.userId || r.id)
+      ).length;
+
+      // If scheduler was previously waiting for snapshot inside today's trigger window, run now
+      const cfg = loadEmailConfig();
+      if (cfg.autoScheduleEnabled && cfg.lastAutoStatus === "SKIPPED_NO_SNAPSHOT") {
+        void runAutoReminderCheck();
+      }
+
+      return res.json({
+        success: true,
+        dateKeyWIB,
+        snapshotCount: activeCount,
+        updatedAt: saved.updatedAt,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Gagal menyinkronkan daftar siswa" });
+    }
+  });
+
+  // 2d. Mark Student as Submitted Today (when student checks in on Guidance page)
+  app.post("/api/notifications/mark-submitted", (req, res) => {
+    try {
+      const { studentId } = req.body || {};
+      if (!studentId || typeof studentId !== "string") {
+        return res.status(400).json({ error: "studentId wajib diisi." });
+      }
+      const { dateKeyWIB } = getWibTimeInfo();
+      markStudentSubmittedInSnapshot(studentId, dateKeyWIB);
+      return res.json({ success: true, dateKeyWIB });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Gagal menandai check-in siswa" });
     }
   });
 
@@ -369,12 +472,23 @@ async function startServer() {
         }
       }
 
-      // Update last sent date & count
-      const todayDateStr = new Date().toISOString().split("T")[0];
+      const { dateKeyWIB } = getWibTimeInfo();
       saveEmailConfig({
-        lastAutoSentDate: todayDateStr,
-        lastAutoSentCount: sentCount,
+        lastManualSentDate: dateKeyWIB,
+        lastManualSentAt: Date.now(),
+        lastManualSentCount: sentCount,
+        lastManualSentBy: pembinaName || config.fromName,
       });
+
+      const dailyStatus =
+        reminderType === "REPORT"
+          ? recordDailyReminderDispatch({
+              dateKeyWIB,
+              mode: "MANUAL",
+              sentBy: pembinaName || config.fromName,
+              details,
+            })
+          : loadDailyReminderStatus(dateKeyWIB);
 
       return res.json({
         success: sentCount > 0,
@@ -383,6 +497,7 @@ async function startServer() {
         failedCount,
         mode,
         previewUrl: testAccountUrl,
+        dailyStatus,
         message:
           mode === "smtp"
             ? `Berhasil mengirim ${sentCount} email otomatis langsung ke kotak masuk siswa!`
@@ -395,41 +510,153 @@ async function startServer() {
     }
   });
 
-  // Automated background scheduler check (every 30 seconds)
-  setInterval(() => {
+  // Real Automated Daily Reminder Scheduler (runs every 30 seconds in WIB)
+  let isAutoSchedulerRunning = false;
+
+  async function runAutoReminderCheck() {
+    if (isAutoSchedulerRunning) return;
+    isAutoSchedulerRunning = true;
+
     try {
       const config = loadEmailConfig();
       if (!config.autoScheduleEnabled) return;
 
-      const now = new Date();
-      const wibFormatter = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Jakarta",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-      const parts = wibFormatter.formatToParts(now);
-      const hour = parts.find(p => p.type === "hour")?.value;
-      const minute = parts.find(p => p.type === "minute")?.value;
-      const currentTimeWIB = `${hour}:${minute}`;
+      const { dateKeyWIB, timeWIB, minutesSinceMidnight, formattedDateWIB } = getWibTimeInfo();
+      const [schedH, schedM] = String(config.autoScheduleTime || "20:30").split(":").map(Number);
+      if (Number.isNaN(schedH) || Number.isNaN(schedM)) return;
+      const targetMinutes = schedH * 60 + schedM;
 
-      const todayWIBFormatter = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Jakarta",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
-      const todayDateWIB = todayWIBFormatter.format(now);
+      // Trigger within [targetMinutes, targetMinutes + 15 minutes] once per WIB day
+      if (config.lastAutoSentDate === dateKeyWIB && Boolean(config.lastAutoSentAt)) return;
+      if (minutesSinceMidnight < targetMinutes || minutesSinceMidnight > targetMinutes + 15) return;
 
-      if (currentTimeWIB === config.autoScheduleTime && config.lastAutoSentDate !== todayDateWIB) {
-        console.log(`[Auto Scheduler] Daily reminder triggered at ${currentTimeWIB} WIB for ${todayDateWIB}`);
+      const transporter = createTransporter(config);
+      if (!transporter) {
+        console.warn("[Auto Scheduler] Skipped: SMTP credentials not configured.");
         saveEmailConfig({
-          lastAutoSentDate: todayDateWIB,
+          lastAutoSentDate: dateKeyWIB,
+          lastAutoSentAt: Date.now(),
+          lastAutoSentCount: 0,
+          lastAutoFailedCount: 0,
+          lastAutoStatus: "SKIPPED_NO_SMTP",
+          lastAutoMessage: "Kredensial SMTP / Google App Password belum lengkap.",
         });
+        return;
       }
+
+      const snapshot = loadDailySnapshot();
+      if (!snapshot || snapshot.dateKeyWIB !== dateKeyWIB) {
+        if (config.lastAutoStatus !== "SKIPPED_NO_SNAPSHOT") {
+          console.warn("[Auto Scheduler] Waiting for today's unsubmitted student snapshot.");
+          saveEmailConfig({
+            lastAutoStatus: "SKIPPED_NO_SNAPSHOT",
+            lastAutoMessage:
+              "Daftar siswa hari ini belum tersinkronisasi (belum ada Admin membuka Guidance & Monitoring hari ini).",
+          });
+        }
+        return;
+      }
+
+      const submittedSet = new Set(snapshot.submittedStudentIds || []);
+      const targets = snapshot.recipients.filter(
+        (r) =>
+          r.email &&
+          r.email.includes("@") &&
+          !submittedSet.has(r.userId || r.id)
+      );
+
+      if (targets.length === 0) {
+        console.log(`[Auto Scheduler] All students already submitted on ${dateKeyWIB}.`);
+        saveEmailConfig({
+          lastAutoSentDate: dateKeyWIB,
+          lastAutoSentAt: Date.now(),
+          lastAutoSentCount: 0,
+          lastAutoFailedCount: 0,
+          lastAutoStatus: "SKIPPED_EMPTY",
+          lastAutoMessage: "Seluruh siswa sudah mengisi laporan belajar hari ini.",
+        });
+        return;
+      }
+
+      console.log(
+        `[Auto Scheduler] Sending daily reminders at ${timeWIB} WIB (${dateKeyWIB}) to ${targets.length} students...`
+      );
+
+      const guidanceUrl = "https://sos.olympiad.my.id/guidance";
+      const details: Array<{ email: string; name: string; status: "sent" | "failed"; error?: string }> = [];
+      let sentCount = 0;
+      let failedCount = 0;
+
+      for (const student of targets) {
+        const html = generateHtmlEmail({
+          studentName: student.fullName,
+          reminderType: "REPORT",
+          guidanceUrl,
+          todayFormatted: formattedDateWIB,
+          pembinaName: config.fromName,
+        });
+        const plainText = `Halo ${student.fullName},\n\nMengingatkan untuk mengisi Laporan Belajar Harian hari ini (${formattedDateWIB}).\nSilakan isi melalui: ${guidanceUrl}\n\nSalam,\n${config.fromName} - SOS Semesta`;
+
+        try {
+          await transporter.sendMail({
+            from: `"${config.fromName}" <${config.fromEmail}>`,
+            to: student.email,
+            subject: `[SOS Semesta] Pengingat Laporan Belajar (${formattedDateWIB})`,
+            text: plainText,
+            html,
+          });
+          details.push({ email: student.email, name: student.fullName, status: "sent" });
+          sentCount++;
+        } catch (sendErr: any) {
+          console.error(`[Auto Scheduler] Failed sending to ${student.email}:`, sendErr?.message || sendErr);
+          details.push({
+            email: student.email,
+            name: student.fullName,
+            status: "failed",
+            error: sendErr?.message || "Gagal terkirim",
+          });
+          failedCount++;
+        }
+      }
+
+      const statusFlag =
+        sentCount > 0 && failedCount === 0
+          ? "SENT"
+          : sentCount > 0
+          ? "PARTIAL"
+          : "FAILED";
+
+      recordDailyReminderDispatch({
+        dateKeyWIB,
+        mode: "AUTO",
+        sentBy: `Jadwal Otomatis (${config.autoScheduleTime} WIB)`,
+        details,
+      });
+
+      saveEmailConfig({
+        lastAutoSentDate: dateKeyWIB,
+        lastAutoSentAt: Date.now(),
+        lastAutoSentCount: sentCount,
+        lastAutoFailedCount: failedCount,
+        lastAutoStatus: statusFlag,
+        lastAutoMessage:
+          sentCount > 0
+            ? `Terkirim otomatis ke ${sentCount} siswa pada pukul ${timeWIB} WIB${failedCount > 0 ? ` (${failedCount} gagal)` : ""}.`
+            : `Gagal mengirim email terjadwal (${failedCount} gagal).`,
+      });
+
+      console.log(
+        `[Auto Scheduler] Completed ${dateKeyWIB} at ${timeWIB} WIB: ${sentCount} sent, ${failedCount} failed.`
+      );
     } catch (schedErr) {
       console.error("[Scheduler Error]:", schedErr);
+    } finally {
+      isAutoSchedulerRunning = false;
     }
+  }
+
+  setInterval(() => {
+    void runAutoReminderCheck();
   }, 30000);
 
   // --- DEVICE PERMIT PDF UPLOAD & SERVE ROUTES ---

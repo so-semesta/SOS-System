@@ -7,8 +7,12 @@ import {
   saveEmailConfig,
   testEmailConnection,
   sendDirectEmailReminders,
+  getDailyReminderStatus,
+  syncDailyReminderSnapshot,
+  formatWibTime,
   EmailConfig,
   SendRemindersResult,
+  DailyStatusResponse,
 } from '../../services/emailReminderService';
 import {
   Dialog,
@@ -42,6 +46,7 @@ import {
   Trophy,
   BookOpen,
   ShieldCheck,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -54,11 +59,15 @@ interface AdminReminderBroadcastDialogProps {
     grade?: string;
     osnField?: string;
   }[];
+  dailyStatus?: DailyStatusResponse | null;
+  onStatusUpdated?: () => void;
   trigger?: React.ReactNode;
 }
 
 export function AdminReminderBroadcastDialog({
   unsubmittedStudents,
+  dailyStatus: externalDailyStatus,
+  onStatusUpdated,
   trigger,
 }: AdminReminderBroadcastDialogProps) {
   const { userProfile } = useAuth();
@@ -79,6 +88,7 @@ export function AdminReminderBroadcastDialog({
 
   // Settings & Configuration States
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
+  const [dailyStatus, setDailyStatus] = useState<DailyStatusResponse | null>(externalDailyStatus || null);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -93,12 +103,22 @@ export function AdminReminderBroadcastDialog({
   const today = new Date();
   const todayFormatted = formatIndonesianDate(today);
 
-  // Load agenda and email config when dialog opens
+  useEffect(() => {
+    if (externalDailyStatus) {
+      setDailyStatus(externalDailyStatus);
+    }
+  }, [externalDailyStatus]);
+
+  // Load agenda, email config, and daily status when dialog opens
   useEffect(() => {
     if (isOpen) {
       getWeeklyAgenda().then(setWeeklyAgenda).catch(err => {
         console.error('Error fetching weekly agenda:', err);
       });
+      const syncList = unsubmittedStudents
+        .filter((s) => Boolean(s.email && s.email.includes('@')))
+        .map((s) => ({ ...s, email: s.email! }));
+      void syncDailyReminderSnapshot(syncList, userProfile?.name || 'Admin').catch(() => {});
       loadConfig();
     }
   }, [isOpen]);
@@ -106,8 +126,14 @@ export function AdminReminderBroadcastDialog({
   const loadConfig = async () => {
     setLoadingConfig(true);
     try {
-      const cfg = await getEmailConfig();
+      const [cfg, statusRes] = await Promise.all([
+        getEmailConfig(),
+        getDailyReminderStatus().catch(() => null),
+      ]);
       setEmailConfig(cfg);
+      if (statusRes) {
+        setDailyStatus(statusRes);
+      }
       setConfigForm({
         smtpHost: cfg.smtpHost,
         smtpPort: cfg.smtpPort,
@@ -257,6 +283,8 @@ Semangat pejuang medali! 🚀
       });
 
       setSendResult(result);
+      await loadConfig();
+      onStatusUpdated?.();
       if (result.success) {
         toast.success(`Berhasil! ${result.sentCount} email ${reminderMode === 'REPORT' ? 'pengingat laporan' : 'agenda lomba'} terkirim langsung dari server.`);
       } else {
@@ -299,6 +327,8 @@ Semangat pejuang medali! 🚀
         agendaItems: weeklyAgenda?.allEvents || [],
       });
 
+      await loadConfig();
+      onStatusUpdated?.();
       if (result.sentCount > 0) {
         toast.success(`Email berhasil dikirim ke ${student.fullName} (${student.email})!`);
       } else {
@@ -323,6 +353,10 @@ Semangat pejuang medali! 🚀
       const updated = await saveEmailConfig(payload);
       setEmailConfig(updated);
       setPasswordInput('');
+      const syncList = validEmailStudents.map((s) => ({ ...s, email: s.email! }));
+      await syncDailyReminderSnapshot(syncList, pembinaName).catch(() => {});
+      await loadConfig();
+      onStatusUpdated?.();
       toast.success('Pengaturan email dan jadwal otomatis berhasil disimpan!');
     } catch (err: any) {
       toast.error(err.message || 'Gagal menyimpan pengaturan email');
@@ -395,6 +429,9 @@ Semangat pejuang medali! 🚀
     }
   };
 
+  const reportSentToday = Boolean(dailyStatus?.status?.reportSent);
+  const sentEmailsMap = dailyStatus?.status?.sentEmails || {};
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       {trigger ? (
@@ -404,15 +441,27 @@ Semangat pejuang medali! 🚀
           render={
             <Button
               variant="outline"
-              className="border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium flex items-center gap-2 shadow-xs cursor-pointer"
+              className={
+                reportSentToday
+                  ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-medium flex items-center gap-2 shadow-xs cursor-pointer whitespace-nowrap shrink-0'
+                  : 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium flex items-center gap-2 shadow-xs cursor-pointer whitespace-nowrap shrink-0'
+              }
             >
-              <Bell className="w-4 h-4 text-amber-600 animate-bounce" />
-              <span>Pengingat & Broadcast</span>
-              {unsubmittedStudents.length > 0 && (
-                <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-0.5 rounded-full ml-1">
+              {reportSentToday ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <Bell className="w-4 h-4 text-amber-600" />
+              )}
+              <span>Pengingat &amp; Broadcast</span>
+              {reportSentToday ? (
+                <Badge className="bg-emerald-600 text-white text-xs px-2 py-0.5 rounded-full ml-1 tabular-nums">
+                  Terkirim {formatWibTime(dailyStatus?.status?.lastSentAt)} WIB
+                </Badge>
+              ) : unsubmittedStudents.length > 0 ? (
+                <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-0.5 rounded-full ml-1 tabular-nums">
                   {unsubmittedStudents.length} Belum Mengisi
                 </Badge>
-              )}
+              ) : null}
             </Button>
           }
         />
@@ -479,18 +528,41 @@ Semangat pejuang medali! 🚀
 
         {/* Primary Action Ribbon */}
         <div className="bg-linear-to-r from-emerald-50 via-teal-50 to-indigo-50 dark:bg-emerald-950/20 border-b border-emerald-200/80 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-emerald-950 dark:text-emerald-200">
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-bold shrink-0 text-[11px]">
-              {validEmailStudents.length}
-            </span>
-            <span>
-              Target:{' '}
-              <strong>
-                {reminderMode === 'REPORT'
-                  ? `${validEmailStudents.length} siswa belum mengisi laporan`
-                  : `${validEmailStudents.length} siswa terdaftar di SOS`}
-              </strong>
-            </span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs text-emerald-950 dark:text-emerald-200">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-bold shrink-0 text-[11px] tabular-nums">
+                {validEmailStudents.length}
+              </span>
+              <span>
+                Target:{' '}
+                <strong>
+                  {reminderMode === 'REPORT'
+                    ? `${validEmailStudents.length} siswa belum mengisi laporan`
+                    : `${validEmailStudents.length} siswa terdaftar di SOS`}
+                </strong>
+              </span>
+            </div>
+
+            {reminderMode === 'REPORT' && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                {reportSentToday ? (
+                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md tabular-nums">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                    Pengingat Harian Sudah Dikirim · {formatWibTime(dailyStatus?.status?.lastSentAt)} WIB (
+                    {dailyStatus?.status?.lastSentMode === 'AUTO' ? 'Otomatis' : 'Manual'} ·{' '}
+                    {dailyStatus?.status?.totalSentCount || 0} siswa)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-medium text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md">
+                    <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                    Belum dikirim hari ini
+                    {emailConfig?.autoScheduleEnabled
+                      ? ` · Jadwal otomatis ${emailConfig.autoScheduleTime} WIB`
+                      : ''}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -498,7 +570,7 @@ Semangat pejuang medali! 🚀
               size="sm"
               onClick={handleSendDirectEmailReminders}
               disabled={isSendingServerEmail || validEmailStudents.length === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-8.5 px-3.5 shadow-xs flex items-center gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-8.5 px-3.5 shadow-xs flex items-center gap-1.5 whitespace-nowrap shrink-0"
             >
               {isSendingServerEmail ? (
                 <>
@@ -509,8 +581,9 @@ Semangat pejuang medali! 🚀
                 <>
                   <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
                   <span>
-                    Kirim Otomatis (
-                    {reminderMode === 'REPORT' ? 'Pengingat Laporan' : 'Agenda Lomba'})
+                    {reminderMode === 'REPORT' && reportSentToday
+                      ? 'Kirim Ulang Otomatis (Pengingat Laporan)'
+                      : `Kirim Otomatis (${reminderMode === 'REPORT' ? 'Pengingat Laporan' : 'Agenda Lomba'})`}
                   </span>
                 </>
               )}
@@ -520,7 +593,7 @@ Semangat pejuang medali! 🚀
               size="sm"
               variant="outline"
               onClick={handleCopyWhatsApp}
-              className="border-green-600 text-green-700 hover:bg-green-50 text-xs h-8.5 flex items-center gap-1.5"
+              className="border-green-600 text-green-700 hover:bg-green-50 text-xs h-8.5 flex items-center gap-1.5 whitespace-nowrap shrink-0"
             >
               <MessageSquare className="w-3.5 h-3.5 text-green-600" />
               Salin WhatsApp
@@ -776,13 +849,14 @@ Semangat pejuang medali! 🚀
                       <TableHead className="text-xs">Nama Siswa</TableHead>
                       <TableHead className="text-xs">Kelas / Bidang</TableHead>
                       <TableHead className="text-xs">Email</TableHead>
+                      <TableHead className="text-xs">Status Pengingat Hari Ini</TableHead>
                       <TableHead className="text-right text-xs">Kirim</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredStudents.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
                           {unsubmittedStudents.length === 0 ? (
                             <div className="space-y-1">
                               <CheckCircle className="w-7 h-7 text-green-500 mx-auto mb-1" />
@@ -797,9 +871,11 @@ Semangat pejuang medali! 🚀
                     ) : (
                       filteredStudents.map((student, idx) => {
                         const isThisSending = singleSendingId === (student.id || student.userId);
+                        const emailKey = (student.email || '').trim().toLowerCase();
+                        const dispatchInfo = emailKey ? sentEmailsMap[emailKey] : undefined;
                         return (
                           <TableRow key={student.id || student.userId || idx} className="text-xs hover:bg-muted/30">
-                            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell className="text-muted-foreground tabular-nums">{idx + 1}</TableCell>
                             <TableCell className="font-medium text-foreground">
                               {student.fullName}
                             </TableCell>
@@ -824,13 +900,31 @@ Semangat pejuang medali! 🚀
                                 <span className="text-amber-500 italic">Belum ada email</span>
                               )}
                             </TableCell>
+                            <TableCell>
+                              {dispatchInfo?.status === 'sent' ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 tabular-nums">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  Terkirim {formatWibTime(dispatchInfo.sentAt)} WIB ({dispatchInfo.mode === 'AUTO' ? 'Otomatis' : 'Manual'})
+                                </span>
+                              ) : dispatchInfo?.status === 'failed' ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600"
+                                  title={dispatchInfo.error || 'Gagal mengirim'}
+                                >
+                                  <XCircle className="w-3.5 h-3.5 shrink-0" />
+                                  Gagal kirim
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-400">Belum dikirim</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleSendDirectEmailSingle(student)}
                                 disabled={isThisSending || !student.email}
-                                className="h-6.5 text-[11px] text-emerald-700 border-emerald-300 hover:bg-emerald-50 px-2 font-medium"
+                                className="h-6.5 text-[11px] text-emerald-700 border-emerald-300 hover:bg-emerald-50 px-2 font-medium whitespace-nowrap shrink-0"
                                 title="Kirim email langsung dari server"
                               >
                                 {isThisSending ? (
@@ -838,7 +932,7 @@ Semangat pejuang medali! 🚀
                                 ) : (
                                   <Zap className="w-3 h-3 mr-1 fill-emerald-600 text-emerald-600" />
                                 )}
-                                Kirim
+                                {dispatchInfo?.status === 'sent' ? 'Kirim Ulang' : 'Kirim'}
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -1003,7 +1097,7 @@ Semangat pejuang medali! 🚀
                   </div>
 
                   {/* Auto-Scheduler Setting */}
-                  <div className="p-2.5 border rounded-lg bg-muted/30 space-y-1.5">
+                  <div className="p-2.5 border rounded-lg bg-muted/30 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-indigo-600" />
@@ -1020,12 +1114,30 @@ Semangat pejuang medali! 🚀
                       <span className="text-[11px] text-muted-foreground">Kirim jam:</span>
                       <Input
                         type="time"
-                        value={configForm.autoScheduleTime || '19:30'}
+                        value={configForm.autoScheduleTime || '20:30'}
                         onChange={(e) => setConfigForm(prev => ({ ...prev, autoScheduleTime: e.target.value }))}
                         disabled={!configForm.autoScheduleEnabled}
                         className="text-xs h-7 w-24"
                       />
                       <span className="text-[11px] text-muted-foreground">WIB</span>
+                    </div>
+                    <div className="border-t border-slate-200/80 pt-1.5 text-[11px] text-slate-600 space-y-0.5">
+                      <div>
+                        Target tersinkronisasi di server hari ini:{' '}
+                        <strong className="tabular-nums">{dailyStatus?.snapshotCount ?? validEmailStudents.length} siswa</strong>
+                      </div>
+                      {emailConfig?.lastAutoSentAt ? (
+                        <div className="text-emerald-700 font-medium">
+                          Eksekusi otomatis terakhir: {emailConfig.lastAutoSentDate} ·{' '}
+                          {formatWibTime(emailConfig.lastAutoSentAt)} WIB ({emailConfig.lastAutoSentCount || 0} terkirim)
+                        </div>
+                      ) : emailConfig?.lastAutoMessage ? (
+                        <div className="text-amber-700">{emailConfig.lastAutoMessage}</div>
+                      ) : (
+                        <div className="text-slate-500">
+                          Belum ada eksekusi otomatis hari ini (menunggu jadwal {configForm.autoScheduleTime || '20:30'} WIB).
+                        </div>
+                      )}
                     </div>
                   </div>
 

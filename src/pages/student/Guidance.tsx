@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../../context/AuthContext';
 import { createGuidanceLog, getStudentGuidanceLogs } from '../../services/guidanceService';
+import { markStudentSubmittedToday } from '../../services/emailReminderService';
 import { Mood, GuidanceLog } from '../../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -96,6 +97,7 @@ export function Guidance() {
         createdAt: Date.now(),
       });
       toast.success('Check-in harian berhasil disimpan!');
+      void markStudentSubmittedToday(currentUser.uid);
       form.reset();
       loadLogs();
     } catch (err) {

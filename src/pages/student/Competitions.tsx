@@ -3,20 +3,76 @@ import { useAuth } from '../../context/AuthContext';
 import { UserRole } from '../../types/auth';
 import { getAllCompetitions, applyForCompetition, checkScheduleConflict, getStudentRegistrations, updateRegistration, getAllRegistrations, updateRegistrationStatus, getArchivedCompetitionById } from '../../services/competitionService';
 import { getStudentProfile } from '../../services/studentService';
-import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student } from '../../types';
+import {
+  getStudentCvAchievements,
+  createStudentCvAchievement,
+  updateStudentCvAchievement,
+  deleteStudentCvAchievement,
+} from '../../services/cvAchievementService';
+import { Competition, Registration, CurationColor, CompetitionStatus, RegistrationStatus, MedalType, Student, CompetitionLevel, StudentCvAchievement } from '../../types';
 import { CompetitionForm } from '../../components/features/competitions/CompetitionForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Switch } from '../../components/ui/switch';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
+import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { Checkbox } from '../../components/ui/checkbox';
 import { toast } from "sonner";
 import { safeFormatDate } from "../../lib/utils";
-import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle, Clock, Info } from 'lucide-react';
+import { Search, MapPin, MessageCircle, Calendar, ExternalLink, Plus, Printer, AlertTriangle, Clock, Info, Award, Pencil, Trash2, FileText } from 'lucide-react';
+
+const LEVEL_OPTIONS: CompetitionLevel[] = [
+  'Sekolah',
+  'Kota/Kabupaten',
+  'Provinsi',
+  'Nasional',
+  'Internasional',
+];
+
+const MEDAL_LABEL_MAP: Record<MedalType, string> = {
+  [MedalType.GOLD]: 'Medali Emas',
+  [MedalType.SILVER]: 'Medali Perak',
+  [MedalType.BRONZE]: 'Medali Perunggu',
+  [MedalType.FINALS]: 'Finalis / Honorable Mention',
+  [MedalType.PARTICIPANT]: 'Peserta / Partisipan',
+};
+
+const FIELD_SUGGESTIONS = [
+  'Matematika',
+  'Fisika',
+  'Kimia',
+  'Biologi',
+  'Informatika',
+  'Astronomi',
+  'Ekonomi',
+  'Geografi',
+  'Kebumian',
+  'IPA',
+  'IPS',
+  'Bahasa Inggris',
+  'Karya Ilmiah / Riset',
+];
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeHttpUrl(url?: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return null;
+}
 
 const formatCuration = (curation: CurationColor) => {
   switch (curation) {
@@ -56,6 +112,36 @@ export function Competitions() {
 
   const [selectedMyReg, setSelectedMyReg] = useState<Registration | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  const [cvAchievements, setCvAchievements] = useState<StudentCvAchievement[]>([]);
+  const [cvModalOpen, setCvModalOpen] = useState(false);
+  const [editingCvItem, setEditingCvItem] = useState<StudentCvAchievement | null>(null);
+  const [cvSaving, setCvSaving] = useState(false);
+  const [deleteCvTarget, setDeleteCvTarget] = useState<StudentCvAchievement | null>(null);
+  const [cvDeleting, setCvDeleting] = useState(false);
+  const [cvForm, setCvForm] = useState<{
+    competitionTitle: string;
+    organizer: string;
+    field: string;
+    level: CompetitionLevel;
+    medalType: MedalType;
+    customAchievementLabel: string;
+    year: string;
+    eventDate: string;
+    certificateUrl: string;
+    notes: string;
+  }>({
+    competitionTitle: '',
+    organizer: '',
+    field: '',
+    level: 'Nasional',
+    medalType: MedalType.GOLD,
+    customAchievementLabel: '',
+    year: String(new Date().getFullYear()),
+    eventDate: '',
+    certificateUrl: '',
+    notes: '',
+  });
 
   const [waDialogOpen, setWaDialogOpen] = useState(false);
   const [waDialogData, setWaDialogData] = useState<{ roundName: string, roundDate: string | number, compTitle: string } | null>(null);
@@ -161,8 +247,11 @@ export function Competitions() {
       const pendingProposals = comps.filter(c => c.isApproved === false && c.proposedByUserId === currentUser.uid);
       setMyProposals(pendingProposals);
       
-      const regs = await getStudentRegistrations(currentUser.uid);
-      const profile = await getStudentProfile(currentUser.uid);
+      const [regs, profile, cvItems] = await Promise.all([
+        getStudentRegistrations(currentUser.uid),
+        getStudentProfile(currentUser.uid),
+        getStudentCvAchievements(currentUser.uid).catch(() => []),
+      ]);
       
       // Cek apakah ada registrasi yang lombanya sudah diarsipkan (tidak ada di approvedComps)
       const missingCompIds = regs
@@ -179,6 +268,7 @@ export function Competitions() {
       setCompetitions(allRelevantComps);
       setRegistrations(regs);
       setStudentData(profile);
+      setCvAchievements(cvItems);
     } catch (error) {
       toast.error('Gagal memuat katalog lomba');
     } finally {
@@ -319,6 +409,120 @@ export function Competitions() {
     }
   };
 
+  const openCreateCvModal = () => {
+    setEditingCvItem(null);
+    setCvForm({
+      competitionTitle: '',
+      organizer: '',
+      field: studentData?.osnField || '',
+      level: 'Nasional',
+      medalType: MedalType.GOLD,
+      customAchievementLabel: '',
+      year: String(new Date().getFullYear()),
+      eventDate: '',
+      certificateUrl: '',
+      notes: '',
+    });
+    setCvModalOpen(true);
+  };
+
+  const openEditCvModal = (item: StudentCvAchievement) => {
+    setEditingCvItem(item);
+    setCvForm({
+      competitionTitle: item.competitionTitle,
+      organizer: item.organizer,
+      field: item.field,
+      level: item.level,
+      medalType: item.medalType,
+      customAchievementLabel: item.customAchievementLabel || '',
+      year: String(item.year),
+      eventDate: item.eventDate || '',
+      certificateUrl: item.certificateUrl || '',
+      notes: item.notes || '',
+    });
+    setCvModalOpen(true);
+  };
+
+  const handleSaveCvAchievement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    const title = cvForm.competitionTitle.trim();
+    const organizer = cvForm.organizer.trim();
+    const field = cvForm.field.trim();
+    const yearNum = Number(cvForm.year);
+
+    if (!title || !organizer || !field) {
+      toast.error('Nama lomba, penyelenggara, dan bidang wajib diisi');
+      return;
+    }
+    if (!Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 2100) {
+      toast.error('Tahun pelaksanaan harus antara 2000 hingga 2100');
+      return;
+    }
+    if (cvForm.certificateUrl.trim() && !safeHttpUrl(cvForm.certificateUrl)) {
+      toast.error('Tautan sertifikat harus diawali http:// atau https://');
+      return;
+    }
+
+    setCvSaving(true);
+    try {
+      const payload = {
+        competitionTitle: title,
+        organizer,
+        field,
+        level: cvForm.level,
+        medalType: cvForm.medalType,
+        customAchievementLabel: cvForm.customAchievementLabel.trim() || undefined,
+        year: Math.round(yearNum),
+        eventDate: cvForm.eventDate.trim() || undefined,
+        certificateUrl: cvForm.certificateUrl.trim() || undefined,
+        notes: cvForm.notes.trim() || undefined,
+      };
+
+      if (editingCvItem) {
+        const updated = await updateStudentCvAchievement(editingCvItem, payload);
+        setCvAchievements((prev) =>
+          prev
+            .map((item) => (item.id === updated.id ? updated : item))
+            .sort((a, b) => b.year - a.year || b.createdAt - a.createdAt)
+        );
+        toast.success('Prestasi CV berhasil diperbarui');
+      } else {
+        const created = await createStudentCvAchievement({
+          studentId: currentUser.uid,
+          ...payload,
+        });
+        setCvAchievements((prev) =>
+          [created, ...prev].sort((a, b) => b.year - a.year || b.createdAt - a.createdAt)
+        );
+        toast.success('Prestasi berhasil ditambahkan ke portofolio CV');
+      }
+      setCvModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error('Gagal menyimpan prestasi CV');
+    } finally {
+      setCvSaving(false);
+    }
+  };
+
+  const handleDeleteCvAchievement = async () => {
+    if (!deleteCvTarget) return;
+    setCvDeleting(true);
+    try {
+      await deleteStudentCvAchievement(deleteCvTarget.id);
+      setCvAchievements((prev) => prev.filter((item) => item.id !== deleteCvTarget.id));
+      toast.success('Prestasi CV berhasil dihapus');
+      setDeleteCvTarget(null);
+    } catch (error) {
+      console.error(error);
+      toast.error('Gagal menghapus prestasi CV');
+    } finally {
+      setCvDeleting(false);
+    }
+  };
+
   const handlePrintCV = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -326,77 +530,135 @@ export function Competitions() {
       return;
     }
 
-    const approvedRegs = registrations.filter(r => r.status === RegistrationStatus.APPROVED);
+    const approvedRegs = registrations
+      .filter(r => r.status === RegistrationStatus.APPROVED)
+      .slice()
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const sortedCvItems = cvAchievements
+      .slice()
+      .sort((a, b) => (b.year || 0) - (a.year || 0) || (b.createdAt || 0) - (a.createdAt || 0));
+
+    const fullName = studentData?.fullName || userProfile?.name || 'Siswa';
+    const studentEmail = studentData?.semestaEmail || currentUser?.email || '-';
+    const gradeText = studentData?.grade || '-';
+    const osnFieldText = studentData?.osnField || '-';
+    const nisnText = studentData?.nisn || '-';
 
     const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html lang="id">
       <head>
-        <title>Curriculum Vitae Lomba - ${userProfile?.name || 'Siswa'}</title>
+        <meta charset="utf-8" />
+        <title>Curriculum Vitae Lomba - ${escapeHtml(fullName)}</title>
         <style>
-          body { font-family: 'Times New Roman', Times, serif; padding: 40px; line-height: 1.6; color: #333; }
-          h1 { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; }
-          .profile-section { margin-bottom: 30px; }
-          .profile-item { margin-bottom: 8px; }
-          .section-title { font-size: 1.2em; font-weight: bold; margin-top: 30px; margin-bottom: 15px; background: #f0f0f0; padding: 5px 10px; border-left: 4px solid #666; }
-          table { w-full; border-collapse: collapse; margin-top: 10px; width: 100%; }
-          th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-          th { background-color: #f9f9f9; }
+          body { font-family: 'Georgia', 'Times New Roman', serif; padding: 40px; line-height: 1.55; color: #1e293b; max-width: 920px; margin: 0 auto; }
+          .doc-header { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 24px; }
+          .doc-kicker { font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #475569; margin-bottom: 4px; }
+          h1 { margin: 0; font-size: 24px; color: #0f172a; }
+          .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; margin-bottom: 26px; font-size: 14px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 6px; }
+          .profile-item strong { color: #0f172a; }
+          .section-title { font-family: Arial, sans-serif; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 26px; margin-bottom: 10px; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; }
+          table { border-collapse: collapse; margin-top: 8px; width: 100%; font-size: 13px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; vertical-align: top; }
+          th { background-color: #f1f5f9; font-family: Arial, sans-serif; font-size: 12px; color: #334155; }
+          .muted { color: #64748b; font-size: 12px; }
+          .empty-note { color: #64748b; font-style: italic; font-size: 13px; margin: 8px 0 16px; }
+          .print-actions { margin-top: 36px; display: flex; justify-content: space-between; align-items: center; }
+          .btn-print { padding: 10px 18px; cursor: pointer; font-size: 14px; background: #0f172a; color: #fff; border: none; border-radius: 6px; }
           @media print {
             body { padding: 0; }
-            button { display: none; }
+            .print-actions { display: none; }
           }
         </style>
       </head>
       <body>
-        <h1>Curriculum Vitae</h1>
+        <div class="doc-header">
+          <div class="doc-kicker">Semesta Olympiad Squad · Curriculum Vitae Prestasi</div>
+          <h1>${escapeHtml(fullName)}</h1>
+        </div>
         
-        <div class="profile-section">
-          <div class="profile-item"><strong>Nama Lengkap:</strong> ${userProfile?.name || '-'}</div>
-          <div class="profile-item"><strong>Email:</strong> ${currentUser?.email || '-'}</div>
+        <div class="profile-grid">
+          <div class="profile-item"><strong>Nama Lengkap:</strong> ${escapeHtml(fullName)}</div>
+          <div class="profile-item"><strong>Email:</strong> ${escapeHtml(studentEmail)}</div>
+          <div class="profile-item"><strong>Kelas / Unit:</strong> ${escapeHtml(gradeText)}</div>
+          <div class="profile-item"><strong>Bidang Pembinaan:</strong> ${escapeHtml(osnFieldText)}</div>
+          ${nisnText !== '-' ? `<div class="profile-item"><strong>NISN:</strong> ${escapeHtml(nisnText)}</div>` : ''}
         </div>
 
-        <div class="section-title">Riwayat Partisipasi Lomba & Kompetisi</div>
+        <div class="section-title">1. Riwayat Lomba Resmi SOS</div>
         ${approvedRegs.length > 0 ? `
           <table>
             <thead>
               <tr>
-                <th>No</th>
+                <th style="width: 36px;">No</th>
                 <th>Nama Kompetisi</th>
                 <th>Bidang</th>
-                <th>Tingkat/Kurasi</th>
+                <th>Kurasi / Jenis</th>
                 <th>Hasil / Pencapaian</th>
-                <th>Tanggal Pengajuan</th>
+                <th>Tanggal</th>
               </tr>
             </thead>
             <tbody>
               ${approvedRegs.map((reg, idx) => {
                 const comp = competitions.find(c => c.id === reg.competitionId);
-                const finalResultMap: Record<string, string> = {
-                  'GOLD': 'Medali Emas',
-                  'SILVER': 'Medali Perak',
-                  'BRONZE': 'Medali Perunggu',
-                  'FINALS': 'Finalis / Honorable Mention',
-                  'PARTICIPANT': 'Partisipan'
-                };
-                const resultText = reg.finalResult ? (finalResultMap[reg.finalResult] || reg.finalResult) : 'Proses/Belum Ada Hasil';
+                const resultText = reg.finalResult ? (MEDAL_LABEL_MAP[reg.finalResult] || reg.finalResult) : 'Terdaftar / Proses Lomba';
+                const fieldStr = comp?.field ? (Array.isArray(comp.field) ? comp.field.join(', ') : comp.field) : '-';
+                const tierStr = [comp?.curationColor, comp?.type].filter(Boolean).join(' · ') || '-';
                 return `
                   <tr>
                     <td>${idx + 1}</td>
-                    <td>${reg.competitionTitle}</td>
-                    <td>${comp?.field ? (Array.isArray(comp.field) ? comp.field.join(', ') : comp.field) : '-'}</td>
-                    <td>${comp?.curationColor || '-'}</td>
-                    <td>${resultText}</td>
-                    <td>${safeFormatDate(reg.createdAt)}</td>
+                    <td><strong>${escapeHtml(reg.competitionTitle)}</strong></td>
+                    <td>${escapeHtml(fieldStr)}</td>
+                    <td>${escapeHtml(tierStr)}</td>
+                    <td>${escapeHtml(resultText)}</td>
+                    <td>${escapeHtml(safeFormatDate(reg.createdAt))}</td>
                   </tr>
                 `;
               }).join('')}
             </tbody>
           </table>
-        ` : '<p>Belum ada riwayat lomba yang disetujui.</p>'}
+        ` : '<p class="empty-note">Belum ada riwayat lomba resmi SOS yang disetujui.</p>'}
+
+        <div class="section-title">2. Portofolio &amp; Prestasi Mandiri (Lomba Lampau / Eksternal)</div>
+        ${sortedCvItems.length > 0 ? `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 36px;">No</th>
+                <th>Nama Kompetisi &amp; Penyelenggara</th>
+                <th>Bidang</th>
+                <th>Tingkat</th>
+                <th>Capaian</th>
+                <th>Tahun</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sortedCvItems.map((item, idx) => {
+                const achievementLabel = item.customAchievementLabel?.trim() || MEDAL_LABEL_MAP[item.medalType] || item.medalType;
+                const dateDisplay = item.eventDate ? `${item.year} (${safeFormatDate(item.eventDate)})` : String(item.year);
+                return `
+                  <tr>
+                    <td>${idx + 1}</td>
+                    <td>
+                      <strong>${escapeHtml(item.competitionTitle)}</strong>
+                      <div class="muted">${escapeHtml(item.organizer)}</div>
+                      ${item.notes ? `<div class="muted">${escapeHtml(item.notes)}</div>` : ''}
+                    </td>
+                    <td>${escapeHtml(item.field)}</td>
+                    <td>${escapeHtml(item.level)}</td>
+                    <td>${escapeHtml(achievementLabel)}</td>
+                    <td>${escapeHtml(dateDisplay)}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        ` : '<p class="empty-note">Belum ada prestasi mandiri yang ditambahkan.</p>'}
         
-        <div style="margin-top: 50px; display: flex; justify-content: flex-end;">
-          <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; font-size: 16px;">Cetak Dokumen / Simpan PDF</button>
+        <div class="print-actions">
+          <span class="muted">Dicetak pada ${escapeHtml(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }))}</span>
+          <button class="btn-print" onclick="window.print()">Cetak Dokumen / Simpan PDF</button>
         </div>
       </body>
       </html>
@@ -598,14 +860,25 @@ export function Competitions() {
         </TabsContent>
 
         <TabsContent value="saya" className="space-y-6">
-          <div className="flex justify-end mb-4">
-            <Button variant="outline" onClick={handlePrintCV}>
-              <Printer className="w-4 h-4 mr-2" /> Cetak Riwayat CV
-            </Button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Riwayat Lomba &amp; Portofolio CV</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Catat prestasi lampau atau eksternal secara mandiri untuk dicetak ke CV tanpa perlu upload poster.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Button type="button" size="sm" onClick={openCreateCvModal} className="whitespace-nowrap shrink-0">
+                <Plus className="w-4 h-4 mr-1.5" /> Tambah Prestasi CV
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handlePrintCV} className="whitespace-nowrap shrink-0">
+                <Printer className="w-4 h-4 mr-1.5" /> Cetak Riwayat CV
+              </Button>
+            </div>
           </div>
           
           {clashes.length > 0 && (
-            <Card className="border-orange-200 bg-orange-50 mb-6">
+            <Card className="border-orange-200 bg-orange-50">
               <CardHeader className="pb-2">
                 <CardTitle className="text-orange-800 flex items-center text-lg">
                   <AlertTriangle className="mr-2 h-5 w-5" />
@@ -631,6 +904,120 @@ export function Competitions() {
             <div className="py-12 text-center text-muted-foreground">Memuat lomba saya...</div>
           ) : (
             <>
+              {/* Manual Student CV Portfolio Section */}
+              <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Award className="w-4 h-4 text-amber-600 shrink-0" />
+                      <h3 className="text-base font-semibold text-slate-900">
+                        Portofolio &amp; Prestasi Mandiri (Khusus CV)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Otomatis masuk ke dokumen Cetak Riwayat CV dan Portal Orang Tua · Tidak memengaruhi poin Leaderboard.
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-slate-500 tabular-nums shrink-0">
+                    {cvAchievements.length} Prestasi Tercatat
+                  </span>
+                </div>
+
+                {cvAchievements.length === 0 ? (
+                  <div className="px-6 py-8 text-center space-y-2">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-700">
+                      Belum ada prestasi mandiri tercatat
+                    </p>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                      Tambahkan riwayat lomba lampau atau lomba eksternal Anda agar langsung tercantum rapi saat mencetak CV.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {cvAchievements.map((item) => {
+                      const medalLabel =
+                        item.customAchievementLabel?.trim() ||
+                        MEDAL_LABEL_MAP[item.medalType] ||
+                        item.medalType;
+                      const certUrl = safeHttpUrl(item.certificateUrl);
+                      return (
+                        <div
+                          key={item.id}
+                          className="px-5 py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:bg-slate-50/60 transition-colors"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-sm font-semibold text-slate-900">
+                                {item.competitionTitle}
+                              </span>
+                              <span className="text-xs font-semibold text-amber-700">
+                                · {medalLabel}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                              <span>{item.organizer}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{item.field}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>Tingkat {item.level}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="tabular-nums font-medium text-slate-700">
+                                {item.eventDate
+                                  ? `${item.year} (${safeFormatDate(item.eventDate)})`
+                                  : item.year}
+                              </span>
+                            </div>
+                            {item.notes && (
+                              <p className="text-xs text-slate-500 leading-relaxed pt-0.5">
+                                {item.notes}
+                              </p>
+                            )}
+                            {certUrl && (
+                              <div className="pt-0.5">
+                                <a
+                                  href={certUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                                >
+                                  Lihat Sertifikat / Bukti
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEditCvModal(item)}
+                              className="h-8 px-2.5 text-xs whitespace-nowrap shrink-0"
+                            >
+                              <Pencil className="w-3.5 h-3.5 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDeleteCvTarget(item)}
+                              className="h-8 px-2.5 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 whitespace-nowrap shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
               {myProposals.length > 0 && (
                 <div className="mb-8">
                   <h3 className="text-xl font-bold mb-4 flex items-center">
@@ -660,42 +1047,47 @@ export function Competitions() {
                 </div>
               )}
 
-              {registrations.length === 0 ? (
-                <div className="py-12 text-center text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-                  Anda belum mengajukan perizinan lomba apapun.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {registrations.map(reg => {
-                const comp = competitions.find(c => c.id === reg.competitionId);
-                return (
-                  <Card key={reg.id} className="flex flex-col hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedMyReg(reg)}>
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start mb-2">
-                        <Badge 
-                          variant={reg.status === RegistrationStatus.APPROVED ? 'default' : reg.status === RegistrationStatus.REJECTED ? 'destructive' : 'secondary'}
-                        >
-                          {reg.status}
-                        </Badge>
-                      </div>
-                      <CardTitle className="text-lg line-clamp-2">{reg.competitionTitle}</CardTitle>
-                      <CardDescription>
-                        Diajukan pada: {safeFormatDate(reg.createdAt)}
-                      </CardDescription>
-                    </CardHeader>
-                    {comp && (
-                      <CardContent className="text-sm">
-                        <div className="flex items-center text-muted-foreground mb-1">
-                          <MapPin className="mr-2 h-4 w-4" />
-                          {comp.location || '-'}
-                        </div>
-                      </CardContent>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-              )}
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-slate-900">
+                  Pengajuan &amp; Lomba Terdaftar SOS
+                </h3>
+                {registrations.length === 0 ? (
+                  <div className="py-10 text-center text-muted-foreground bg-muted/20 rounded-xl border border-dashed text-sm">
+                    Anda belum mengajukan perizinan lomba resmi SOS.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {registrations.map(reg => {
+                      const comp = competitions.find(c => c.id === reg.competitionId);
+                      return (
+                        <Card key={reg.id} className="flex flex-col hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedMyReg(reg)}>
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start mb-2">
+                              <Badge 
+                                variant={reg.status === RegistrationStatus.APPROVED ? 'default' : reg.status === RegistrationStatus.REJECTED ? 'destructive' : 'secondary'}
+                              >
+                                {reg.status}
+                              </Badge>
+                            </div>
+                            <CardTitle className="text-lg line-clamp-2">{reg.competitionTitle}</CardTitle>
+                            <CardDescription>
+                              Diajukan pada: {safeFormatDate(reg.createdAt)}
+                            </CardDescription>
+                          </CardHeader>
+                          {comp && (
+                            <CardContent className="text-sm">
+                              <div className="flex items-center text-muted-foreground mb-1">
+                                <MapPin className="mr-2 h-4 w-4" />
+                                {comp.location || '-'}
+                              </div>
+                            </CardContent>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </TabsContent>
@@ -1071,6 +1463,187 @@ export function Competitions() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Manual CV Achievement Modal */}
+      <Dialog open={cvModalOpen} onOpenChange={(open) => !cvSaving && setCvModalOpen(open)}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingCvItem ? 'Edit Prestasi Portofolio CV' : 'Tambah Prestasi Portofolio CV'}
+            </DialogTitle>
+            <DialogDescription>
+              Catat prestasi lomba lampau atau eksternal tanpa perlu mengunggah poster. Data ini khusus untuk Cetak Riwayat CV dan tidak mengubah poin Leaderboard.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveCvAchievement} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="cv-title">Nama Lomba / Kompetisi *</Label>
+              <Input
+                id="cv-title"
+                required
+                placeholder="Contoh: OSN Matematika Provinsi 2024"
+                value={cvForm.competitionTitle}
+                onChange={(e) => setCvForm((f) => ({ ...f, competitionTitle: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cv-organizer">Penyelenggara *</Label>
+                <Input
+                  id="cv-organizer"
+                  required
+                  placeholder="Contoh: Puspresnas / Kemendikbud"
+                  value={cvForm.organizer}
+                  onChange={(e) => setCvForm((f) => ({ ...f, organizer: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="cv-field">Bidang Lomba *</Label>
+                <Input
+                  id="cv-field"
+                  required
+                  list="cv-field-suggestions"
+                  placeholder="Contoh: Matematika / Informatika"
+                  value={cvForm.field}
+                  onChange={(e) => setCvForm((f) => ({ ...f, field: e.target.value }))}
+                />
+                <datalist id="cv-field-suggestions">
+                  {FIELD_SUGGESTIONS.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Tingkat Kompetisi *</Label>
+                <Select
+                  value={cvForm.level}
+                  onValueChange={(val) => setCvForm((f) => ({ ...f, level: val as CompetitionLevel }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih tingkat">
+                      {cvForm.level}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEVEL_OPTIONS.map((lvl) => (
+                      <SelectItem key={lvl} value={lvl}>
+                        {lvl}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Capaian / Predikat *</Label>
+                <Select
+                  value={cvForm.medalType}
+                  onValueChange={(val) => setCvForm((f) => ({ ...f, medalType: val as MedalType }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih capaian">
+                      {MEDAL_LABEL_MAP[cvForm.medalType]}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={MedalType.GOLD}>Medali Emas</SelectItem>
+                    <SelectItem value={MedalType.SILVER}>Medali Perak</SelectItem>
+                    <SelectItem value={MedalType.BRONZE}>Medali Perunggu</SelectItem>
+                    <SelectItem value={MedalType.FINALS}>Finalis / Honorable Mention</SelectItem>
+                    <SelectItem value={MedalType.PARTICIPANT}>Peserta / Partisipan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cv-custom-label">Label Capaian Khusus (Opsional)</Label>
+              <Input
+                id="cv-custom-label"
+                placeholder="Contoh: Juara 1 Nasional / Best Theory / Top 10"
+                value={cvForm.customAchievementLabel}
+                onChange={(e) => setCvForm((f) => ({ ...f, customAchievementLabel: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cv-year">Tahun *</Label>
+                <Input
+                  id="cv-year"
+                  type="number"
+                  required
+                  min={2000}
+                  max={2100}
+                  value={cvForm.year}
+                  onChange={(e) => setCvForm((f) => ({ ...f, year: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="cv-event-date">Tanggal Pelaksanaan (Opsional)</Label>
+                <Input
+                  id="cv-event-date"
+                  type="date"
+                  value={cvForm.eventDate}
+                  onChange={(e) => setCvForm((f) => ({ ...f, eventDate: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cv-cert-url">Link Sertifikat / Dokumentasi (Opsional)</Label>
+              <Input
+                id="cv-cert-url"
+                type="url"
+                placeholder="https://drive.google.com/..."
+                value={cvForm.certificateUrl}
+                onChange={(e) => setCvForm((f) => ({ ...f, certificateUrl: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cv-notes">Catatan Tambahan (Opsional)</Label>
+              <Textarea
+                id="cv-notes"
+                rows={2}
+                placeholder="Misal: Tim beregu 3 orang atau keterangan topik karya..."
+                value={cvForm.notes}
+                onChange={(e) => setCvForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCvModalOpen(false)}
+                disabled={cvSaving}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={cvSaving} className="whitespace-nowrap shrink-0">
+                {cvSaving ? 'Menyimpan...' : editingCvItem ? 'Simpan Perubahan' : 'Simpan ke Portofolio CV'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDeleteDialog
+        isOpen={!!deleteCvTarget}
+        onClose={() => setDeleteCvTarget(null)}
+        onConfirm={handleDeleteCvAchievement}
+        isLoading={cvDeleting}
+        title="Hapus Prestasi CV"
+        description={`Apakah Anda yakin ingin menghapus "${deleteCvTarget?.competitionTitle || ''}" dari portofolio CV Anda?`}
+      />
     </div>
   );
 }

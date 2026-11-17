@@ -11,12 +11,103 @@ export interface EmailConfig {
   fromName: string;
   fromEmail: string;
   autoScheduleEnabled: boolean;
-  autoScheduleTime: string; // "HH:mm" in WIB, e.g. "19:30"
+  autoScheduleTime: string; // "HH:mm" in WIB, e.g. "20:30"
   lastAutoSentDate?: string;
+  lastAutoSentAt?: number;
   lastAutoSentCount?: number;
+  lastAutoFailedCount?: number;
+  lastAutoStatus?:
+    | 'SENT'
+    | 'PARTIAL'
+    | 'FAILED'
+    | 'SKIPPED_NO_SMTP'
+    | 'SKIPPED_NO_SNAPSHOT'
+    | 'SKIPPED_EMPTY';
+  lastAutoMessage?: string;
+  lastManualSentDate?: string;
+  lastManualSentAt?: number;
+  lastManualSentCount?: number;
+  lastManualSentBy?: string;
+}
+
+export interface DailySnapshotRecipient {
+  id: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  grade?: string;
+  osnField?: string;
+}
+
+export interface DailyReminderSnapshot {
+  dateKeyWIB: string;
+  updatedAt: number;
+  syncedBy?: string;
+  recipients: DailySnapshotRecipient[];
+  submittedStudentIds: string[];
+}
+
+export interface DailyRecipientDispatch {
+  email: string;
+  name: string;
+  sentAt: number;
+  mode: 'AUTO' | 'MANUAL';
+  status: 'sent' | 'failed';
+  error?: string;
+}
+
+export interface DailyReminderStatusRecord {
+  dateKey: string;
+  reportSent: boolean;
+  lastSentAt?: number;
+  lastSentMode?: 'AUTO' | 'MANUAL';
+  lastSentBy?: string;
+  totalSentCount: number;
+  lastBatchSentCount: number;
+  lastBatchFailedCount: number;
+  sentEmails: Record<string, DailyRecipientDispatch>;
 }
 
 const CONFIG_FILE = path.join(process.cwd(), 'server-email-config.json');
+const SNAPSHOT_FILE = path.join(process.cwd(), 'server-reminder-snapshot.json');
+const STATUS_FILE = path.join(process.cwd(), 'server-reminder-status.json');
+
+const INDONESIAN_DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const INDONESIAN_MONTHS = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+export function getWibTimeInfo(now: Date = new Date()) {
+  const dateKeyWIB = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+
+  const timeParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const hourNum = Number(timeParts.find((p) => p.type === 'hour')?.value || 0) % 24;
+  const minNum = Number(timeParts.find((p) => p.type === 'minute')?.value || 0);
+  const hourStr = String(hourNum).padStart(2, '0');
+  const minStr = String(minNum).padStart(2, '0');
+
+  const wibDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const formattedDateWIB = `${INDONESIAN_DAYS[wibDate.getDay()]}, ${wibDate.getDate()} ${INDONESIAN_MONTHS[wibDate.getMonth()]} ${wibDate.getFullYear()}`;
+
+  return {
+    dateKeyWIB,
+    timeWIB: `${hourStr}:${minStr}`,
+    minutesSinceMidnight: hourNum * 60 + minNum,
+    formattedDateWIB,
+  };
+}
 
 // Default initial config
 const defaultConfig: EmailConfig = {
@@ -28,7 +119,7 @@ const defaultConfig: EmailConfig = {
   fromName: process.env.SMTP_FROM_NAME || 'SOS Semesta',
   fromEmail: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'scienceolympiad@semesta.sch.id',
   autoScheduleEnabled: false,
-  autoScheduleTime: '19:30',
+  autoScheduleTime: '20:30',
 };
 
 export function loadEmailConfig(): EmailConfig {
@@ -56,6 +147,162 @@ export function saveEmailConfig(config: Partial<EmailConfig>): EmailConfig {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
   } catch (err) {
     console.error('[ServerEmail] Error saving config file:', err);
+  }
+  return updated;
+}
+
+export function loadDailySnapshot(): DailyReminderSnapshot | null {
+  try {
+    if (fs.existsSync(SNAPSHOT_FILE)) {
+      const raw = fs.readFileSync(SNAPSHOT_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as DailyReminderSnapshot;
+      if (parsed && typeof parsed.dateKeyWIB === 'string' && Array.isArray(parsed.recipients)) {
+        return {
+          ...parsed,
+          submittedStudentIds: Array.isArray(parsed.submittedStudentIds) ? parsed.submittedStudentIds : [],
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[ServerEmail] Error loading daily snapshot:', err);
+  }
+  return null;
+}
+
+export function saveDailySnapshot(
+  dateKeyWIB: string,
+  recipients: DailySnapshotRecipient[],
+  syncedBy?: string
+): DailyReminderSnapshot {
+  const existing = loadDailySnapshot();
+  const existingSubmitted =
+    existing && existing.dateKeyWIB === dateKeyWIB ? existing.submittedStudentIds : [];
+
+  const updated: DailyReminderSnapshot = {
+    dateKeyWIB,
+    updatedAt: Date.now(),
+    syncedBy: syncedBy || existing?.syncedBy,
+    recipients: recipients.map((r) => ({
+      id: String(r.id || r.userId || ''),
+      userId: String(r.userId || r.id || ''),
+      fullName: String(r.fullName || 'Siswa'),
+      email: String(r.email || '').trim(),
+      grade: r.grade ? String(r.grade) : undefined,
+      osnField: r.osnField ? String(r.osnField) : undefined,
+    })),
+    submittedStudentIds: Array.from(new Set(existingSubmitted)),
+  };
+  try {
+    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[ServerEmail] Error saving daily snapshot:', err);
+  }
+  return updated;
+}
+
+export function markStudentSubmittedInSnapshot(studentId: string, dateKeyWIB: string): void {
+  if (!studentId) return;
+  const existing = loadDailySnapshot();
+  const submitted =
+    existing && existing.dateKeyWIB === dateKeyWIB ? existing.submittedStudentIds : [];
+  if (submitted.includes(studentId)) return;
+
+  const updated: DailyReminderSnapshot = {
+    dateKeyWIB,
+    updatedAt: existing?.updatedAt || Date.now(),
+    syncedBy: existing?.syncedBy,
+    recipients:
+      existing && existing.dateKeyWIB === dateKeyWIB
+        ? existing.recipients.filter((r) => r.userId !== studentId && r.id !== studentId)
+        : [],
+    submittedStudentIds: [...submitted, studentId],
+  };
+  try {
+    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[ServerEmail] Error updating snapshot submission:', err);
+  }
+}
+
+export function loadDailyReminderStatus(dateKeyWIB: string): DailyReminderStatusRecord {
+  try {
+    if (fs.existsSync(STATUS_FILE)) {
+      const raw = fs.readFileSync(STATUS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as DailyReminderStatusRecord;
+      if (parsed && parsed.dateKey === dateKeyWIB) {
+        return {
+          ...parsed,
+          sentEmails: parsed.sentEmails || {},
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[ServerEmail] Error loading daily status:', err);
+  }
+  return {
+    dateKey: dateKeyWIB,
+    reportSent: false,
+    totalSentCount: 0,
+    lastBatchSentCount: 0,
+    lastBatchFailedCount: 0,
+    sentEmails: {},
+  };
+}
+
+export function recordDailyReminderDispatch(params: {
+  dateKeyWIB: string;
+  mode: 'AUTO' | 'MANUAL';
+  sentBy?: string;
+  details: Array<{ email: string; name: string; status: 'sent' | 'failed'; error?: string }>;
+}): DailyReminderStatusRecord {
+  const current = loadDailyReminderStatus(params.dateKeyWIB);
+  const now = Date.now();
+  const nextSentEmails = { ...(current.sentEmails || {}) };
+
+  let batchSent = 0;
+  let batchFailed = 0;
+  for (const item of params.details) {
+    const emailKey = (item.email || '').trim().toLowerCase();
+    if (!emailKey || emailKey === 'kosong') {
+      batchFailed++;
+      continue;
+    }
+    if (item.status === 'sent') {
+      batchSent++;
+    } else {
+      batchFailed++;
+    }
+    // Never overwrite a 'sent' status with a failed one unless re-sending failed
+    const prev = nextSentEmails[emailKey];
+    if (!prev || prev.status !== 'sent' || item.status === 'sent') {
+      nextSentEmails[emailKey] = {
+        email: emailKey,
+        name: item.name,
+        sentAt: now,
+        mode: params.mode,
+        status: item.status,
+        error: item.error,
+      };
+    }
+  }
+
+  const totalSentCount = Object.values(nextSentEmails).filter((v) => v.status === 'sent').length;
+  const updated: DailyReminderStatusRecord = {
+    dateKey: params.dateKeyWIB,
+    reportSent: current.reportSent || batchSent > 0,
+    lastSentAt: batchSent > 0 ? now : current.lastSentAt,
+    lastSentMode: batchSent > 0 ? params.mode : current.lastSentMode,
+    lastSentBy: batchSent > 0 ? params.sentBy : current.lastSentBy,
+    totalSentCount,
+    lastBatchSentCount: batchSent,
+    lastBatchFailedCount: batchFailed,
+    sentEmails: nextSentEmails,
+  };
+
+  try {
+    fs.writeFileSync(STATUS_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[ServerEmail] Error saving daily status:', err);
   }
   return updated;
 }
