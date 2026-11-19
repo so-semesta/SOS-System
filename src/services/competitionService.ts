@@ -102,6 +102,12 @@ export const getAllRegistrations = async (): Promise<Registration[]> => {
   return registrations;
 };
 
+export const getAllApprovedRegistrationsForRecap = async (): Promise<Registration[]> => {
+  const q = query(collection(db, 'registrations'), where('status', '==', RegistrationStatus.APPROVED));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Registration);
+};
+
 export const updateRegistration = async (registrationId: string, data: Partial<Registration>) => {
   await updateDoc(doc(db, 'registrations', registrationId), removeUndefined(data));
 };

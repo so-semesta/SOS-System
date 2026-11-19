@@ -3,6 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../../context/AuthContext';
+import { UserRole } from '../../types/auth';
 import { createGuidanceLog, getStudentGuidanceLogs } from '../../services/guidanceService';
 import { markStudentSubmittedToday } from '../../services/emailReminderService';
 import { Mood, GuidanceLog } from '../../types';
@@ -39,7 +40,8 @@ const MOOD_EMOJIS = {
 };
 
 export function Guidance() {
-  const { currentUser, userProfile } = useAuth();
+  const { currentUser, userProfile, userRole } = useAuth();
+  const isSosStudent = userRole === UserRole.SOS;
   const [logs, setLogs] = useState<GuidanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -97,7 +99,9 @@ export function Guidance() {
         createdAt: Date.now(),
       });
       toast.success('Check-in harian berhasil disimpan!');
-      void markStudentSubmittedToday(currentUser.uid);
+      if (isSosStudent) {
+        void markStudentSubmittedToday(currentUser.uid);
+      }
       form.reset();
       loadLogs();
     } catch (err) {
@@ -115,7 +119,7 @@ export function Guidance() {
         <p className="text-muted-foreground">Catat progress belajar dan kondisi emosional Anda hari ini secara private.</p>
       </div>
 
-      {/* Today's Status Banner */}
+      {/* Today's Status Banner (Pengingat wajib khusus Siswa SOS) */}
       {hasCheckedInToday ? (
         <div className="p-4 rounded-xl border border-green-200 bg-green-50/80 dark:bg-green-950/20 text-green-900 dark:text-green-200 flex items-center justify-between gap-3 text-xs shadow-xs">
           <div className="flex items-center gap-2.5">
@@ -127,7 +131,7 @@ export function Guidance() {
           </div>
           <Badge className="bg-green-600 text-white font-normal px-2.5 py-1">Tercatat Hari Ini</Badge>
         </div>
-      ) : (
+      ) : isSosStudent ? (
         <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/25 text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3 text-xs shadow-xs">
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 animate-pulse" />
@@ -140,7 +144,7 @@ export function Guidance() {
           </div>
           <Badge className="bg-amber-500 text-white font-normal px-2.5 py-1">Belum Terisi</Badge>
         </div>
-      )}
+      ) : null}
 
       <Card>
         <CardHeader>

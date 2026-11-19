@@ -13,6 +13,8 @@
         "linkedStudentNames": { "type": "array", "items": { "type": "string" } },
         "relationship": { "type": "string", "enum": ["Ayah", "Ibu", "Wali"] },
         "activeParentLinkId": { "type": "string" },
+        "isNewStudent": { "type": "boolean" },
+        "roleLockedByManagement": { "type": "boolean" },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
@@ -307,6 +309,25 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["dateKey", "reportSent", "lastSentAt", "lastSentMode", "sentCount", "updatedAt"]
+    },
+    "systemEmailConfig": {
+      "title": "SystemEmailConfig",
+      "description": "Persistent SMTP and daily automated reminder schedule settings managed by Admin/Management",
+      "type": "object",
+      "properties": {
+        "smtpHost": { "type": "string" },
+        "smtpPort": { "type": "number" },
+        "smtpSecure": { "type": "boolean" },
+        "smtpUser": { "type": "string" },
+        "smtpPass": { "type": "string" },
+        "fromName": { "type": "string" },
+        "fromEmail": { "type": "string" },
+        "autoScheduleEnabled": { "type": "boolean" },
+        "autoScheduleTime": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["smtpHost", "smtpPort", "smtpUser", "fromName", "fromEmail", "autoScheduleEnabled", "autoScheduleTime", "updatedAt"]
     }
   },
   "firestore": {
@@ -365,6 +386,10 @@
     "dailyReminderLogs/{dateKey}": {
       "schema": { "$ref": "#/entities/dailyReminderLog" },
       "description": "Persistent daily reminder sent status log per dateKey (YYYY-MM-DD WIB)"
+    },
+    "systemSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/systemEmailConfig" },
+      "description": "Persistent system-wide settings such as SMTP email & daily auto-reminder schedule"
     }
   }
 }

@@ -94,6 +94,9 @@ service cloud.firestore {
              (!('relationship' in data) || (data.relationship in ['Ayah', 'Ibu', 'Wali'])) &&
              (!('activeParentLinkId' in data) || (data.activeParentLinkId is string && data.activeParentLinkId.size() <= 128)) &&
              (!('isBlocked' in data) || data.isBlocked is bool) &&
+             (!('isNewStudent' in data) || data.isNewStudent is bool) &&
+             (!('roleLockedByManagement' in data) || data.roleLockedByManagement is bool) &&
+             (!('migratedToSosAt' in data) || data.migratedToSosAt is number) &&
              (!('createdAt' in data) || (data.createdAt is number || data.createdAt is timestamp)) && 
              (!('updatedAt' in data) || (data.updatedAt is number || data.updatedAt is timestamp));
     }
@@ -237,15 +240,15 @@ service cloud.firestore {
                        )
                      );
       
-      // Updates: Management/Admins can update users. Parents can only sync fields from their APPROVED active parentLink.
-      allow update: if isSignedIn() && isValidUserProfile(incoming()) && (
+      // Updates: Management/Admins can update users. Block legacy auto-migration writes ('migratedToSosAt') from un-updated clients. Parents can only sync fields from their APPROVED active parentLink.
+      allow update: if isSignedIn() && isValidUserProfile(incoming()) &&
+        !('migratedToSosAt' in incoming().diff(existing()).affectedKeys()) && (
         isManagement() ||
         isAdmin() || 
         (isOwner(userId) && isSuperAdmin()) ||
         (isOwner(userId) && !(existing().role in ['PARENT', 'parent']) && (
           !('role' in incoming()) || 
-          incoming().role == existing().role ||
-          (existing().role in ['STUDENT', 'student'] && incoming().role in ['SOS', 'sos'])
+          incoming().role == existing().role
         ) && !('linkedStudentIds' in incoming()) && !('activeParentLinkId' in incoming())) ||
         (isOwner(userId) && existing().role in ['PARENT', 'parent'] &&
           request.auth.token.email_verified == true &&
@@ -508,6 +511,30 @@ service cloud.firestore {
       allow get, list: if isSignedIn() && isAdmin();
       allow create, update: if isSignedIn() && isValidId(dateKey) && isAdmin() && isValidDailyReminderLog(incoming()) && incoming().dateKey == dateKey;
       allow delete: if isSignedIn() && isValidId(dateKey) && isAdmin();
+    }
+
+    function isValidSystemEmailConfig(data) {
+      return data.keys().hasAll(['smtpHost', 'smtpPort', 'smtpUser', 'fromName', 'fromEmail', 'autoScheduleEnabled', 'autoScheduleTime', 'updatedAt']) &&
+             data.keys().hasOnly(['smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'smtpPass', 'fromName', 'fromEmail', 'autoScheduleEnabled', 'autoScheduleTime', 'updatedAt', 'updatedBy']) &&
+             data.smtpHost is string && data.smtpHost.size() >= 3 && data.smtpHost.size() <= 200 &&
+             data.smtpPort is number && data.smtpPort >= 1 && data.smtpPort <= 65535 &&
+             (!('smtpSecure' in data) || data.smtpSecure is bool) &&
+             data.smtpUser is string && data.smtpUser.size() >= 3 && data.smtpUser.size() <= 256 &&
+             (!('smtpPass' in data) || (data.smtpPass is string && data.smtpPass.size() <= 256)) &&
+             data.fromName is string && data.fromName.size() >= 1 && data.fromName.size() <= 150 &&
+             data.fromEmail is string && data.fromEmail.size() >= 3 && data.fromEmail.size() <= 256 &&
+             data.autoScheduleEnabled is bool &&
+             data.autoScheduleTime is string && data.autoScheduleTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$') &&
+             data.updatedAt is number &&
+             (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 256));
+    }
+
+    // Persistent Email & Reminder Schedule Settings (Admin/Management ONLY)
+    match /systemSettings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && settingId == 'emailConfig' && isAdmin();
+      allow list: if isSignedIn() && isAdmin();
+      allow create, update: if isSignedIn() && isValidId(settingId) && settingId == 'emailConfig' && isAdmin() && isValidSystemEmailConfig(incoming());
+      allow delete: if isSignedIn() && isValidId(settingId) && isManagement();
     }
 
     function isValidDevicePermitLetter(data) {

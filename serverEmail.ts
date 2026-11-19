@@ -12,6 +12,7 @@ export interface EmailConfig {
   fromEmail: string;
   autoScheduleEnabled: boolean;
   autoScheduleTime: string; // "HH:mm" in WIB, e.g. "20:30"
+  configUpdatedAt?: number;
   lastAutoSentDate?: string;
   lastAutoSentAt?: number;
   lastAutoSentCount?: number;
@@ -37,6 +38,7 @@ export interface DailySnapshotRecipient {
   email: string;
   grade?: string;
   osnField?: string;
+  role?: string;
 }
 
 export interface DailyReminderSnapshot {
@@ -182,14 +184,17 @@ export function saveDailySnapshot(
     dateKeyWIB,
     updatedAt: Date.now(),
     syncedBy: syncedBy || existing?.syncedBy,
-    recipients: recipients.map((r) => ({
-      id: String(r.id || r.userId || ''),
-      userId: String(r.userId || r.id || ''),
-      fullName: String(r.fullName || 'Siswa'),
-      email: String(r.email || '').trim(),
-      grade: r.grade ? String(r.grade) : undefined,
-      osnField: r.osnField ? String(r.osnField) : undefined,
-    })),
+    recipients: recipients
+      .filter((r) => !r.role || r.role === 'SOS')
+      .map((r) => ({
+        id: String(r.id || r.userId || ''),
+        userId: String(r.userId || r.id || ''),
+        fullName: String(r.fullName || 'Siswa'),
+        email: String(r.email || '').trim(),
+        grade: r.grade ? String(r.grade) : undefined,
+        osnField: r.osnField ? String(r.osnField) : undefined,
+        role: r.role ? String(r.role) : 'SOS',
+      })),
     submittedStudentIds: Array.from(new Set(existingSubmitted)),
   };
   try {

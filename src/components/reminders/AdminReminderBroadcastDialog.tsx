@@ -58,6 +58,7 @@ interface AdminReminderBroadcastDialogProps {
     email?: string;
     grade?: string;
     osnField?: string;
+    role?: string;
   }[];
   dailyStatus?: DailyStatusResponse | null;
   onStatusUpdated?: () => void;
@@ -346,6 +347,7 @@ Semangat pejuang medali! 🚀
     try {
       const payload: Partial<EmailConfig> = {
         ...configForm,
+        updatedBy: userProfile?.email || userProfile?.name || 'Admin',
       };
       if (passwordInput.trim()) {
         payload.smtpPass = passwordInput.trim();
@@ -373,7 +375,11 @@ Semangat pejuang medali! 🚀
     setIsTestingConnection(true);
     try {
       if (passwordInput.trim()) {
-        await saveEmailConfig({ ...configForm, smtpPass: passwordInput.trim() });
+        await saveEmailConfig({
+          ...configForm,
+          smtpPass: passwordInput.trim(),
+          updatedBy: userProfile?.email || userProfile?.name || 'Admin',
+        });
         setPasswordInput('');
       }
       const res = await testEmailConnection(testEmailAddress);
@@ -537,7 +543,7 @@ Semangat pejuang medali! 🚀
                 Target:{' '}
                 <strong>
                   {reminderMode === 'REPORT'
-                    ? `${validEmailStudents.length} siswa belum mengisi laporan`
+                    ? `${validEmailStudents.length} siswa SOS belum mengisi laporan`
                     : `${validEmailStudents.length} siswa terdaftar di SOS`}
                 </strong>
               </span>
@@ -646,7 +652,7 @@ Semangat pejuang medali! 🚀
               </TabsTrigger>
               <TabsTrigger value="students" className="flex items-center gap-1.5 text-xs">
                 <Users className="w-3.5 h-3.5" />
-                Daftar Siswa ({unsubmittedStudents.length})
+                Daftar Siswa SOS ({unsubmittedStudents.length})
               </TabsTrigger>
               <TabsTrigger value="agenda" className="flex items-center gap-1.5 text-xs">
                 <Calendar className="w-3.5 h-3.5" />
@@ -1063,7 +1069,7 @@ Semangat pejuang medali! 🚀
                     </div>
                     <span className="text-[10px] text-muted-foreground mt-0.5 block">
                       {emailConfig?.hasStoredPassword
-                        ? '✅ Kredensial aktif tersimpan di server.'
+                        ? '✅ Kredensial aktif tersimpan permanen di database & server.'
                         : '⚠️ Belum dikonfigurasi. Masukkan sandi 16 karakter dari Google.'}
                     </span>
                   </div>

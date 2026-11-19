@@ -26,12 +26,12 @@ export async function migrateExistingStudentsToSos(): Promise<{ migratedCount: n
 
     snapshot.docs.forEach((userDoc) => {
       const data = userDoc.data();
-      // Skip master email if it somehow had student
+      // Skip master email, new students, or any user whose role was explicitly assigned/locked by Management
       const isMasterEmail = data.email?.trim().toLowerCase() === 'scienceolympiad@semesta.sch.id';
-      if (!isMasterEmail) {
+      const isProtectedRegularStudent = data.roleLockedByManagement === true || data.isNewStudent === true;
+      if (!isMasterEmail && !isProtectedRegularStudent) {
         batch.update(doc(db, 'users', userDoc.id), {
           role: UserRole.SOS,
-          migratedToSosAt: Date.now(),
           updatedAt: Date.now(),
         });
         count++;

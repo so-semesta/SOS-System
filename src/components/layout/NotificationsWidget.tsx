@@ -6,10 +6,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Badge } from '../ui/badge';
 import { getAllCompetitions, getStudentRegistrations, getPendingRegistrationsCount } from '../../services/competitionService';
 import { getStudentGuidanceLogs, getTodayGuidanceLogs } from '../../services/guidanceService';
-import { getAllStudents } from '../../services/studentService';
 import { getStudentInAppNotifications } from '../../services/notificationService';
 import { CompetitionStatus, RegistrationStatus } from '../../types';
 import { UserRole, isStudentRole, isAdminRole } from '../../types/auth';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 
 export function NotificationsWidget() {
   const { currentUser, userRole } = useAuth();
@@ -66,20 +67,22 @@ export function NotificationsWidget() {
           }
         });
         
-        // 3. Daily checkin check
-        const logs = await getStudentGuidanceLogs(currentUser.uid);
-        const hasCheckedInToday = logs.some(log => {
-          const logDate = new Date(log.date);
-          return logDate.toDateString() === today.toDateString();
-        });
-        
-        if (!hasCheckedInToday) {
-          notifs.push({
-            title: 'Daily Check-in Belum Diisi',
-            desc: 'Anda belum mengisi laporan belajar harian hari ini. Klik untuk mengisi.',
-            type: 'alert',
-            link: '/guidance'
+        // 3. Daily checkin check (Khusus Siswa SOS, bukan Siswa Reguler)
+        if (userRole === UserRole.SOS) {
+          const logs = await getStudentGuidanceLogs(currentUser.uid);
+          const hasCheckedInToday = logs.some(log => {
+            const logDate = new Date(log.date);
+            return logDate.toDateString() === today.toDateString();
           });
+          
+          if (!hasCheckedInToday) {
+            notifs.push({
+              title: 'Daily Check-in Belum Diisi',
+              desc: 'Anda belum mengisi laporan belajar harian hari ini. Klik untuk mengisi.',
+              type: 'alert',
+              link: '/guidance'
+            });
+          }
         }
       } else if (isAdminRole(userRole)) {
         // Request perizinan
@@ -93,26 +96,30 @@ export function NotificationsWidget() {
           });
         }
         
-        // Daily checkin hari ini yg belum
-        const startOfDay = new Date(today);
-        startOfDay.setHours(0,0,0,0);
-        const endOfDay = new Date(today);
-        endOfDay.setHours(23,59,59,999);
-        const allLogs = await getTodayGuidanceLogs(startOfDay.getTime(), endOfDay.getTime());
-        const allStudents = await getAllStudents();
-        
-        const checkedInStudentIds = new Set(allLogs.filter(log => {
-          return new Date(log.date).toDateString() === today.toDateString();
-        }).map(log => log.studentId));
-        
-        const notCheckedIn = allStudents.filter(s => !checkedInStudentIds.has(s.id));
-        if (notCheckedIn.length > 0) {
-          notifs.push({
-            title: 'Rekap Daily Checkin Hari Ini',
-            desc: `${notCheckedIn.length} siswa belum mengisi laporan belajar hari ini.`,
-            type: 'info',
-            link: '/admin/guidance'
-          });
+        // Daily checkin hari ini yg belum (Khusus Siswa SOS)
+        if (userRole !== UserRole.ADMIN_STUDENT) {
+          const startOfDay = new Date(today);
+          startOfDay.setHours(0,0,0,0);
+          const endOfDay = new Date(today);
+          endOfDay.setHours(23,59,59,999);
+          const [allLogs, sosUsersSnap] = await Promise.all([
+            getTodayGuidanceLogs(startOfDay.getTime(), endOfDay.getTime()),
+            getDocs(query(collection(db, 'users'), where('role', '==', UserRole.SOS)))
+          ]);
+          
+          const checkedInStudentIds = new Set(allLogs.filter(log => {
+            return new Date(log.date).toDateString() === today.toDateString();
+          }).map(log => log.studentId));
+          
+          const notCheckedInCount = sosUsersSnap.docs.filter(d => !checkedInStudentIds.has(d.id)).length;
+          if (notCheckedInCount > 0) {
+            notifs.push({
+              title: 'Rekap Daily Checkin SOS Hari Ini',
+              desc: `${notCheckedInCount} siswa SOS belum mengisi laporan belajar hari ini.`,
+              type: 'info',
+              link: '/admin/guidance'
+            });
+          }
         }
       }
     } catch (error) {
@@ -126,14 +133,14 @@ export function NotificationsWidget() {
     if (open) {
       fetchNotifications();
     }
-  }, [open, currentUser]);
+  }, [open, currentUser, userRole]);
   
   // also fetch once on mount
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 10 * 60 * 1000); // every 10 min
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, userRole]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

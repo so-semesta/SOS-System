@@ -175,6 +175,7 @@ async function startServer() {
     fromEmail: config.fromEmail,
     autoScheduleEnabled: config.autoScheduleEnabled,
     autoScheduleTime: config.autoScheduleTime,
+    configUpdatedAt: config.configUpdatedAt,
     lastAutoSentDate: config.lastAutoSentDate,
     lastAutoSentAt: config.lastAutoSentAt,
     lastAutoSentCount: config.lastAutoSentCount,
@@ -203,7 +204,10 @@ async function startServer() {
     try {
       const current = loadEmailConfig();
       const incomingBody = req.body || {};
-      const patch: Partial<EmailConfig> = { ...incomingBody };
+      const patch: Partial<EmailConfig> = {
+        ...incomingBody,
+        configUpdatedAt: typeof incomingBody.configUpdatedAt === "number" ? incomingBody.configUpdatedAt : Date.now(),
+      };
 
       // If user explicitly updated autoScheduleTime to a future WIB time today, allow re-trigger today
       if (
@@ -309,7 +313,14 @@ async function startServer() {
   // 3. Test Email Connection
   app.post("/api/notifications/test-connection", async (req, res) => {
     try {
-      const config = loadEmailConfig();
+      let config = loadEmailConfig();
+      const incomingSmtp = req.body?.smtpConfig;
+      if ((!config.smtpPass || !config.smtpUser) && incomingSmtp?.smtpPass) {
+        config = saveEmailConfig({
+          ...incomingSmtp,
+          configUpdatedAt: incomingSmtp.configUpdatedAt || Date.now(),
+        });
+      }
       const testRecipient = req.body.testRecipient || config.fromEmail;
 
       if (!config.smtpUser || !config.smtpPass) {
@@ -378,13 +389,20 @@ async function startServer() {
         todayFormatted,
         pembinaName,
         agendaItems = [],
+        smtpConfig,
       } = req.body;
 
       if (!Array.isArray(recipients) || recipients.length === 0) {
         return res.status(400).json({ error: "Daftar penerima email kosong." });
       }
 
-      const config = loadEmailConfig();
+      let config = loadEmailConfig();
+      if ((!config.smtpPass || !config.smtpUser) && smtpConfig?.smtpPass) {
+        config = saveEmailConfig({
+          ...smtpConfig,
+          configUpdatedAt: smtpConfig.configUpdatedAt || Date.now(),
+        });
+      }
       let transporter = createTransporter(config);
       let mode: "smtp" | "ethereal" = "smtp";
       let testAccountUrl: string | undefined;
@@ -411,6 +429,9 @@ async function startServer() {
       const isReport = reminderType === "REPORT";
 
       for (const student of recipients) {
+        if (isReport && student.role && student.role !== "SOS") {
+          continue;
+        }
         if (!student.email || !student.email.includes("@")) {
           details.push({
             email: student.email || "kosong",
@@ -560,6 +581,7 @@ async function startServer() {
       const submittedSet = new Set(snapshot.submittedStudentIds || []);
       const targets = snapshot.recipients.filter(
         (r) =>
+          (!r.role || r.role === "SOS") &&
           r.email &&
           r.email.includes("@") &&
           !submittedSet.has(r.userId || r.id)

@@ -54,6 +54,17 @@ export async function getStudentCvAchievements(studentId: string): Promise<Stude
   }
 }
 
+export async function getAllStudentCvAchievements(): Promise<StudentCvAchievement[]> {
+  try {
+    const snap = await getDocs(collection(db, 'studentCvAchievements'));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<StudentCvAchievement, 'id'>) }))
+      .sort((a, b) => (b.year || 0) - (a.year || 0) || (b.createdAt || 0) - (a.createdAt || 0));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'studentCvAchievements');
+  }
+}
+
 export interface StudentCvAchievementInput {
   studentId: string;
   competitionTitle: string;

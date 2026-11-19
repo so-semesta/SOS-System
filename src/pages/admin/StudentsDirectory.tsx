@@ -6,8 +6,9 @@ import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Search, Pencil, Trash2, Download, ShieldCheck, UserCheck } from 'lucide-react';
+import { Search, Pencil, Trash2, Download, Printer, Award } from 'lucide-react';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { StudentProfileForm } from '../../components/features/students/StudentProfileForm';
 import { useAuth } from '../../context/AuthContext';
@@ -16,6 +17,10 @@ import { deleteDoc, doc, collection, query, where, getDocs, updateDoc } from 'fi
 import { db } from '../../lib/firebase';
 import { ConfirmDeleteDialog } from '../../components/ui/ConfirmDeleteDialog';
 import { getFriendlyDisplayName } from '../../lib/utils';
+import { getStudentRegistrations, getAllCompetitions, getAllArchivedCompetitions } from '../../services/competitionService';
+import { getStudentCvAchievements } from '../../services/cvAchievementService';
+import { getStudentAchievements } from '../../services/achievementService';
+import { buildStudentAchievementSummaries, printStudentAchievementCV } from '../../lib/cvPrintUtils';
 
 
 export function StudentsDirectory() {
@@ -67,6 +72,7 @@ export function StudentsDirectory() {
             id: profile.id || u.uid, 
             userId: u.uid, 
             fullName: cleanName, 
+            email: profile.semestaEmail || profile.activeEmail || (u as any).email || '-',
             role: (u as any).role, 
             isBlocked: (u as any).isBlocked 
           };
@@ -81,6 +87,7 @@ export function StudentsDirectory() {
             activePhoneWA: '',
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            email: (u as any).email || '-',
             role: (u as any).role,
             isBlocked: (u as any).isBlocked,
           };
@@ -259,6 +266,57 @@ export function StudentsDirectory() {
     document.body.removeChild(link);
   };
 
+  const [printingStudentId, setPrintingStudentId] = useState<string | null>(null);
+
+  const handlePrintStudentCv = async (s: any) => {
+    const uid = s.userId || s.id;
+    if (!uid) {
+      toast.error('ID Siswa tidak ditemukan');
+      return;
+    }
+    setPrintingStudentId(uid);
+    try {
+      const [regs, cvItems, activeComps, archivedComps, studentAchievements] = await Promise.all([
+        getStudentRegistrations(uid),
+        getStudentCvAchievements(uid).catch(() => []),
+        getAllCompetitions(),
+        getAllArchivedCompetitions().catch(() => []),
+        getStudentAchievements(uid).catch(() => []),
+      ]);
+
+      const competitionsMap = new Map<string, any>();
+      archivedComps.forEach((c) => competitionsMap.set(c.id, c));
+      activeComps.forEach((c) => competitionsMap.set(c.id, c));
+
+      const { summaries } = buildStudentAchievementSummaries({
+        students: [
+          {
+            userId: uid,
+            fullName: s.fullName || 'Siswa',
+            email: s.semestaEmail || s.activeEmail || s.email || '-',
+            nisn: s.nisn || '-',
+            grade: s.grade || '-',
+            osnField: s.osnField || '-',
+            role: s.role || UserRole.STUDENT,
+          },
+        ],
+        registrations: regs,
+        competitionsMap,
+        achievements: studentAchievements,
+        cvAchievements: cvItems,
+      });
+
+      if (summaries[0]) {
+        printStudentAchievementCV(summaries[0]);
+      }
+    } catch (err) {
+      console.error('Failed to print student CV:', err);
+      toast.error('Gagal menyiapkan CV prestasi siswa');
+    } finally {
+      setPrintingStudentId(null);
+    }
+  };
+
   const canEdit = userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN || userRole === UserRole.ADMIN_SOS || userRole === UserRole.ADMIN_STUDENT;
 
   return (
@@ -272,8 +330,15 @@ export function StudentsDirectory() {
             {(userRole === UserRole.MANAGEMENT || userRole === UserRole.ADMIN) && "Pangkalan data seluruh siswa (SOS dan Siswa Reguler)."}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={handleExportCSV}>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Link
+            to="/admin/achievements"
+            className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+          >
+            <Award className="w-4 h-4 mr-2" />
+            Rekap Prestasi &amp; CV
+          </Link>
+          <Button variant="outline" onClick={handleExportCSV} className="whitespace-nowrap shrink-0">
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
           </Button>
@@ -369,6 +434,15 @@ export function StudentsDirectory() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Cetak CV / Daftar Prestasi"
+                        disabled={printingStudentId === (s.userId || s.id)}
+                        onClick={() => handlePrintStudentCv(s)}
+                      >
+                        <Printer className="h-4 w-4 text-slate-700" />
+                      </Button>
                       {canEdit && (
                         <Button 
                           variant="ghost" 

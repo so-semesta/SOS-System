@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { isStudentRole } from '../../types/auth';
+import { UserRole } from '../../types/auth';
 import { getStudentGuidanceLogs } from '../../services/guidanceService';
 import { getWeeklyAgenda, WeeklyAgendaSummary, formatIndonesianDate } from '../../services/agendaService';
 import {
@@ -30,8 +30,10 @@ export function StudentDailyReminderDialog() {
   const todayStr = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
   const todayFormatted = formatIndonesianDate(today);
 
+  const isSosStudent = userRole === UserRole.SOS;
+
   useEffect(() => {
-    if (!currentUser || !isStudentRole(userRole)) {
+    if (!currentUser || !isSosStudent) {
       setLoading(false);
       return;
     }
@@ -101,8 +103,8 @@ export function StudentDailyReminderDialog() {
     navigate('/guidance');
   };
 
-  // Only render if student has not checked in today
-  if (!currentUser || !isStudentRole(userRole) || hasCheckedInToday) {
+  // Only render reminder popup for SOS students who have not checked in today
+  if (!currentUser || !isSosStudent || hasCheckedInToday) {
     return null;
   }
 

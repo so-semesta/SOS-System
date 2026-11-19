@@ -33,6 +33,7 @@ import { StudentDevicePermit } from './pages/student/StudentDevicePermit';
 import { AdminDevicePermits } from './pages/admin/AdminDevicePermits';
 import { ParentsManagement } from './pages/admin/ParentsManagement';
 import { ParentPortal } from './pages/parent/ParentPortal';
+import { AchievementsRecap } from './pages/admin/AchievementsRecap';
 
 // Komponen helper agar Dashboard melakukan hal yang tepat berdasarkan role
 const RootRedirect = () => {
@@ -86,6 +87,7 @@ export default function App() {
               <Route element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.ADMIN_SOS, UserRole.ADMIN_STUDENT, UserRole.MANAGEMENT]} />}>
                 <Route path="/analytics" element={<Dashboard />} />
                 <Route path="/admin/students" element={<StudentsDirectory />} />
+                <Route path="/admin/achievements" element={<AchievementsRecap />} />
                 <Route path="/admin/parents" element={<ParentsManagement />} />
                 <Route path="/admin/competitions" element={<CompetitionsAdmin />} />
                 <Route path="/admin/registrations" element={<RegistrationApprovals />} />

@@ -51,6 +51,7 @@ export function UsersManagement() {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [showMigrationConfirm, setShowMigrationConfirm] = useState(false);
 
   // Override roles & approval state for pending admin requests
   const [roleOverrides, setRoleOverrides] = useState<Record<string, AdminFinalRole>>({});
@@ -110,10 +111,33 @@ export function UsersManagement() {
   );
 
   const handleRoleChange = async (userId: string, newRole: string) => {
+    const now = Date.now();
+    const isRegularStudent = newRole === UserRole.STUDENT;
     try {
-      await updateDoc(doc(db, 'users', userId), { role: newRole, updatedAt: Date.now() });
-      toast.success(`Role berhasil diubah menjadi ${newRole}`);
-      fetchAll();
+      await updateDoc(doc(db, 'users', userId), {
+        role: newRole,
+        isNewStudent: isRegularStudent,
+        roleLockedByManagement: true,
+        updatedAt: now,
+      });
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                role: newRole,
+                isNewStudent: isRegularStudent,
+                roleLockedByManagement: true,
+                updatedAt: now,
+              }
+            : u
+        )
+      );
+      toast.success(
+        isRegularStudent
+          ? 'Role berhasil diubah menjadi Siswa Reguler (terkunci permanen)'
+          : `Role berhasil diubah menjadi ${newRole}`
+      );
     } catch {
       toast.error('Gagal mengubah role');
     }
@@ -126,8 +150,9 @@ export function UsersManagement() {
       if (res.migratedCount > 0) {
         toast.success(`Berhasil memigrasikan ${res.migratedCount} siswa lama ke role SOS!`);
       } else {
-        toast.info('Semua data siswa saat ini sudah berada di role SOS.');
+        toast.info('Tidak ada siswa lama yang perlu dimigrasikan (Siswa Reguler tetap dipertahankan).');
       }
+      setShowMigrationConfirm(false);
       fetchAll();
     } catch {
       toast.error('Gagal menjalankan migrasi');
@@ -253,7 +278,7 @@ export function UsersManagement() {
         </div>
         <Button
           variant="outline"
-          onClick={handleRunMigration}
+          onClick={() => setShowMigrationConfirm(true)}
           disabled={isMigrating}
           className="border-purple-200 text-purple-700 hover:bg-purple-50 shrink-0 whitespace-nowrap"
         >
@@ -620,6 +645,33 @@ export function UsersManagement() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog for Legacy SOS Migration */}
+      <Dialog open={showMigrationConfirm} onOpenChange={(open) => !isMigrating && setShowMigrationConfirm(open)}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Migrasi Siswa Lama ke SOS</DialogTitle>
+            <DialogDescription>
+              Fitur ini hanya memigrasikan akun siswa lama yang belum memiliki penanda role. Siswa yang sudah ditandai sebagai{' '}
+              <span className="font-semibold text-slate-800">Siswa Reguler</span> oleh Management atau pendaftar baru{' '}
+              <span className="font-semibold text-slate-800">tidak akan diubah</span> ke SOS.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowMigrationConfirm(false)}
+              disabled={isMigrating}
+            >
+              Batal
+            </Button>
+            <Button type="button" onClick={handleRunMigration} disabled={isMigrating}>
+              {isMigrating ? 'Memigrasikan...' : 'Jalankan Migrasi'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -18,7 +18,6 @@ import {
   isAdminRole,
 } from '../types/auth';
 import { ParentLink, ParentRelationship } from '../types';
-import { migrateExistingStudentsToSos } from '../services/migrationService';
 import {
   bindParentLoginToLink,
   findParentLinkByEmail,
@@ -329,7 +328,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
 
           if (isMasterEmail || isAdminRole(data.role)) {
-            migrateExistingStudentsToSos().catch(() => {});
             setCurrentUser(user);
             setUserProfile(data);
             setPendingParentLink(null);
@@ -348,7 +346,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             updatedAt: Date.now(),
           };
           await setDoc(docRef, masterProfile);
-          migrateExistingStudentsToSos().catch(() => {});
           setCurrentUser(user);
           setUserProfile(masterProfile);
           setPendingParentLink(null);
@@ -449,25 +446,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         }
 
-        const isAdminUser = isMasterEmail || isAdminRole(data.role);
-        if (isAdminUser) {
-          migrateExistingStudentsToSos().catch(() => {});
-        } else if (data.role === UserRole.STUDENT && !data.isNewStudent) {
-          data.role = UserRole.SOS;
-          try {
-            await updateDoc(docRef, {
-              role: UserRole.SOS,
-              migratedToSosAt: Date.now(),
-              updatedAt: Date.now(),
-            });
-          } catch (e) {
-            console.error('Failed to auto-migrate student to SOS:', e);
-          }
-        }
         setUserProfile(data);
         setAuthGateStatus('AUTHENTICATED');
       } else {
-        const newUserProfile: UserProfile & { isNewStudent?: boolean } = {
+        const newUserProfile: UserProfile = {
           uid: user.uid,
           email,
           role: isMasterEmail ? UserRole.MANAGEMENT : UserRole.STUDENT,

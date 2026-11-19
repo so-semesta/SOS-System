@@ -79,63 +79,65 @@ export function GuidanceMonitor() {
       setLogs(logsData);
 
       const rMap = new Map<string, string>();
+      const profileMap = new Map<string, any>();
       const studentMap = new Map<string, any>();
 
-      // 1. Process profiles from students collection (where real fullNames are stored)
+      // 1. Index profiles from students collection (no forced SOS role assumption)
       allStudentsData.forEach(p => {
         const key = p.userId || p.id;
-        const validName = p.fullName && !isRawId(p.fullName) ? p.fullName.trim() : '';
-        studentMap.set(key, {
-          id: p.id || key,
-          userId: key,
-          fullName: validName,
-          email: p.activeEmail || p.semestaEmail || '',
-          osnField: p.osnField || '',
-          role: UserRole.SOS,
-          grade: p.grade || 'Active'
-        });
+        profileMap.set(key, p);
       });
 
-      // 2. Process users collection to determine roles & fallback names/emails
+      // 2. Process users collection for exact roles; only include SOS & STUDENT in studentMap
       if (usersSnap) {
-        usersSnap.docs.forEach(doc => {
-          const uData = doc.data();
-          const uRole = uData.role || UserRole.SOS;
-          rMap.set(doc.id, uRole);
+        usersSnap.docs.forEach(docSnap => {
+          const uData = docSnap.data();
+          const uRole = uData.role || UserRole.STUDENT;
+          rMap.set(docSnap.id, uRole);
 
-          const existing = studentMap.get(doc.id);
+          if (uRole !== UserRole.SOS && uRole !== UserRole.STUDENT) {
+            return;
+          }
+
+          const profile = profileMap.get(docSnap.id);
+          const profileName = profile?.fullName && !isRawId(profile.fullName) ? profile.fullName.trim() : '';
           const cleanName = getFriendlyDisplayName(
-            existing?.fullName || uData.name,
+            profileName || uData.name,
             uData.email,
             ''
           );
 
-          studentMap.set(doc.id, {
-            id: doc.id,
-            userId: doc.id,
-            fullName: cleanName || existing?.fullName || '',
-            email: existing?.email || uData.email || '',
-            osnField: existing?.osnField || '',
+          studentMap.set(docSnap.id, {
+            id: profile?.id || docSnap.id,
+            userId: docSnap.id,
+            fullName: cleanName,
+            email: profile?.activeEmail || profile?.semestaEmail || uData.email || '',
+            osnField: profile?.osnField || '',
             role: uRole,
-            grade: existing?.grade || 'Active'
+            grade: profile?.grade || 'Active'
           });
         });
       }
 
-
-      // 3. Process logs to ensure every student who submitted a log is in the student map
-      // and has their studentName extracted from log if not already known
+      // 3. Ensure any historical student who submitted a log is represented without wrongly labeling them SOS
       logsData.forEach(log => {
         if (!log.studentId) return;
+        const knownRole = rMap.get(log.studentId);
+        if (knownRole && knownRole !== UserRole.SOS && knownRole !== UserRole.STUDENT) return;
+
         const existing = studentMap.get(log.studentId);
         const logNameValid = log.studentName && !isRawId(log.studentName) ? log.studentName.trim() : '';
         if (!existing) {
+          const profile = profileMap.get(log.studentId);
+          const profileName = profile?.fullName && !isRawId(profile.fullName) ? profile.fullName.trim() : '';
           studentMap.set(log.studentId, {
-            id: log.studentId,
+            id: profile?.id || log.studentId,
             userId: log.studentId,
-            fullName: logNameValid || 'Siswa',
-            role: rMap.get(log.studentId) || UserRole.SOS,
-            grade: 'Active'
+            fullName: profileName || logNameValid || 'Siswa',
+            email: profile?.activeEmail || profile?.semestaEmail || '',
+            osnField: profile?.osnField || '',
+            role: knownRole || UserRole.STUDENT,
+            grade: profile?.grade || 'Active'
           });
         } else if (!existing.fullName || isRawId(existing.fullName)) {
           if (logNameValid) {
@@ -332,8 +334,11 @@ export function GuidanceMonitor() {
     return Object.values(grouped);
   }, [logs, selectedStudentFilter]);
 
-  // List of students who haven't submitted a report today
+  const canSendSosReminders = userRole !== UserRole.ADMIN_STUDENT;
+
+  // List of SOS-labeled students ONLY who haven't submitted a report today (Siswa Reguler is always excluded)
   const unsubmittedStudentsToday = useMemo(() => {
+    if (!canSendSosReminders) return [];
     const today = new Date();
     const checkedInStudentIds = new Set(
       logs
@@ -341,25 +346,31 @@ export function GuidanceMonitor() {
         .map(l => l.studentId)
     );
 
-    return dropdownStudents
-      .filter(s => !checkedInStudentIds.has(s.userId || s.id))
+    return students
+      .filter(s => {
+        const uid = s.userId || s.id;
+        const actualRole = userRolesMap.get(uid) || (s as any).role;
+        return actualRole === UserRole.SOS && !checkedInStudentIds.has(uid);
+      })
+      .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''))
       .map(s => ({
         id: s.id,
         userId: s.userId || s.id,
         fullName: s.fullName,
         email: (s as any).email || '',
         grade: s.grade,
-        osnField: (s as any).osnField
+        osnField: (s as any).osnField,
+        role: UserRole.SOS,
       }));
-  }, [dropdownStudents, logs]);
+  }, [canSendSosReminders, students, userRolesMap, logs]);
 
-  // Sync today's unsubmitted student snapshot to server so automated 20:30 WIB scheduler uses live targets
+  // Sync today's unsubmitted SOS student snapshot to server so automated 20:30 WIB scheduler uses live SOS-only targets
   useEffect(() => {
-    if (loading) return;
+    if (loading || !canSendSosReminders) return;
     syncDailyReminderSnapshot(unsubmittedStudentsToday, 'GuidanceMonitor')
       .then(() => refreshDailyStatus())
       .catch(() => {});
-  }, [loading, unsubmittedStudentsToday]);
+  }, [loading, canSendSosReminders, unsubmittedStudentsToday]);
 
   const isReminderSentToday = Boolean(dailyStatus?.status?.reportSent);
 
@@ -375,11 +386,13 @@ export function GuidanceMonitor() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
-          <AdminReminderBroadcastDialog
-            unsubmittedStudents={unsubmittedStudentsToday}
-            dailyStatus={dailyStatus}
-            onStatusUpdated={refreshDailyStatus}
-          />
+          {canSendSosReminders && (
+            <AdminReminderBroadcastDialog
+              unsubmittedStudents={unsubmittedStudentsToday}
+              dailyStatus={dailyStatus}
+              onStatusUpdated={refreshDailyStatus}
+            />
+          )}
 
           {!isRoleLocked ? (
             <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -417,7 +430,7 @@ export function GuidanceMonitor() {
         </div>
       </div>
 
-      {unsubmittedStudentsToday.length > 0 && (
+      {canSendSosReminders && unsubmittedStudentsToday.length > 0 && (
         <div
           className={
             isReminderSentToday
@@ -449,15 +462,15 @@ export function GuidanceMonitor() {
                   }
                 >
                   {isReminderSentToday
-                    ? `Pengingat Harian Sudah Dikirim · ${unsubmittedStudentsToday.length} Siswa Masih Belum Mengisi`
-                    : `Pengingat Harian: ${unsubmittedStudentsToday.length} Siswa Belum Mengisi Laporan Hari Ini`}
+                    ? `Pengingat Harian SOS Sudah Dikirim · ${unsubmittedStudentsToday.length} Siswa SOS Masih Belum Mengisi`
+                    : `Pengingat Harian: ${unsubmittedStudentsToday.length} Siswa SOS Belum Mengisi Laporan Hari Ini`}
                 </h4>
                 {isReminderSentToday ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 tabular-nums">
                     <CheckCircle2 className="w-3 h-3" />
                     Terkirim {formatWibTime(dailyStatus?.status?.lastSentAt)} WIB ·{' '}
                     {dailyStatus?.status?.lastSentMode === 'AUTO' ? 'Otomatis' : 'Manual'} (
-                    {dailyStatus?.status?.totalSentCount || 0} siswa)
+                    {dailyStatus?.status?.totalSentCount || 0} siswa SOS)
                   </span>
                 ) : dailyStatus?.config?.autoScheduleEnabled ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 tabular-nums">
@@ -474,8 +487,8 @@ export function GuidanceMonitor() {
                 }
               >
                 {isReminderSentToday
-                  ? 'Email pengingat hari ini sudah dikirimkan. Anda dapat melihat status per siswa atau mengirim ulang bila diperlukan.'
-                  : 'Kirim pengingat email massal, notifikasi in-app, atau broadcast WhatsApp beserta agenda perlombaan pekan ini.'}
+                  ? 'Email pengingat hari ini sudah dikirimkan khusus kepada siswa SOS. Anda dapat melihat status per siswa atau mengirim ulang bila diperlukan.'
+                  : 'Kirim pengingat email massal, notifikasi in-app, atau broadcast WhatsApp khusus untuk siswa berlabel SOS (Siswa Reguler dikecualikan).'}
               </p>
             </div>
           </div>
@@ -497,7 +510,7 @@ export function GuidanceMonitor() {
                   <Mail className="w-3.5 h-3.5" />
                   {isReminderSentToday
                     ? 'Detail Pengiriman / Kirim Ulang'
-                    : `Kirim Pengingat & Email (${unsubmittedStudentsToday.length} Siswa)`}
+                    : `Kirim Pengingat & Email (${unsubmittedStudentsToday.length} Siswa SOS)`}
                 </Button>
               }
             />

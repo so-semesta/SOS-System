@@ -18,6 +18,8 @@ export interface UserProfile {
   linkedStudentNames?: string[];
   relationship?: 'Ayah' | 'Ibu' | 'Wali';
   activeParentLinkId?: string;
+  isNewStudent?: boolean;
+  roleLockedByManagement?: boolean;
   createdAt?: number;
   updatedAt?: number;
 }
